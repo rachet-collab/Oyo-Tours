@@ -19,18 +19,34 @@ import {
 import { useApp } from '../store/AppStore.jsx'
 import { BOOKING_STATUSES, STATUS_TONE, OCCUPANCY, CANCEL_TYPES } from '../store/data.js'
 import { inr, shortDate } from '../lib/format.js'
+import { blockCities, hotelOptionsForCity } from '../lib/rooming.js'
 
 const cx = (...c) => c.filter(Boolean).join(' ')
 const COUNTRY_CODES = ['+91', '+1', '+44', '+971', '+65', '+66', '+62', '+94', '+977', '+60']
 const daysTo = (iso) => (iso ? Math.round((new Date(iso + 'T00:00:00') - new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00')) / 86400000) : null)
+// Log timestamp: "10 Aug 2026 · 4:32 PM" when the value carries a time, else date only.
+const logWhen = (at) => {
+  if (!at) return ''
+  if (!String(at).includes('T')) return shortDate(at)
+  const d = new Date(at)
+  if (isNaN(d)) return shortDate(String(at).slice(0, 10))
+  return `${shortDate(String(at).slice(0, 10))} · ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+}
 const readFile = (file) => new Promise((res) => { const r = new FileReader(); r.onload = () => res({ name: file.name, url: r.result }); r.readAsDataURL(file) })
 
 export default function BookingDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { user, bookings, guestById, packageById, departureById, setBookingStatus, setBookingTravellers, cancelBooking, markRefunded } = useApp()
+  const { user, bookings, guestById, packageById, departureById, inventoryById, setBookingStatus, setBookingTravellers, approveBookingPayment, cancelBooking, markRefunded } = useApp()
   const b = bookings.find((x) => x.id === id)
   const isAdmin = user?.role === 'admin'
+  // Linked hotel block (for per-city hotel assignment against each traveller).
+  const hotelBlock = b?.hotelInventoryId ? inventoryById(b.hotelInventoryId) : null
+  const assignHotel = (i, city, val) => {
+    const details = (b.travellerDetails || []).map((t, k) =>
+      (k === i ? { ...t, hotelByCity: { ...(t.hotelByCity || {}), [city]: val } } : t))
+    setBookingTravellers(b.id, details)
+  }
 
   const [status, setStatus] = useState(b?.status)
   const [note, setNote] = useState(b?.paymentNote || '')
@@ -39,6 +55,9 @@ export default function BookingDetail() {
   const [cancelOpen, setCancelOpen] = useState(false)
   const [proof, setProof] = useState(null)
   const payProofRef = useRef(null)
+  const [refundProof, setRefundProof] = useState(null)
+  const refundProofRef = useRef(null)
+  const [allUpdatesOpen, setAllUpdatesOpen] = useState(false)
 
   if (!b) {
     return (
@@ -55,15 +74,28 @@ export default function BookingDetail() {
   const p = packageById(b.packageId)
   const d = departureById(b.departureId)
 
+  // Payment breakdown (advance vs balance due) per the package policy.
+  const advancePaid = b.advanceAmount || 0
+  const balanceDue = Math.max(0, (b.amount || 0) - advancePaid)
+  const bdDays = p?.payment?.balanceDueDays ?? 10
+  const balanceDueDate = d?.date ? new Date(new Date(d.date).getTime() - bdDays * 86400000).toISOString().slice(0, 10) : ''
+
   // Every status update on this booking, oldest → newest: history entries plus
   // the finance payment-approval event.
   const timeline = (() => {
     const ev = (b.history || []).map((h) => ({ label: h.status, note: h.note, by: h.by, at: h.at, tone: STATUS_TONE[h.status] || 'neutral' }))
     if (b.paymentApproved) ev.push({ label: 'Payment approved', note: 'Approved by finance', by: b.approvedBy, at: b.approvedAt, tone: 'won' })
+    if (b.cancellation?.refundStatus === 'refunded') ev.push({ label: 'Refund settled', note: `Refund ${inr(b.cancellation.refundAmount || 0)} paid${b.cancellation.refundNote ? ` · ${b.cancellation.refundNote}` : ''}`, by: b.cancellation.refundedBy, at: b.cancellation.refundedAt, tone: 'won' })
     return ev
   })()
 
   const onProof = async (e) => { const f = e.target.files?.[0]; if (f) setProof(await readFile(f)); e.target.value = '' }
+  const onRefundProof = async (e) => { const f = e.target.files?.[0]; if (f) setRefundProof(await readFile(f)); e.target.value = '' }
+  const confirmRefund = () => {
+    if (!refundNote.trim() || !refundProof) return
+    markRefunded(b.id, refundNote.trim(), refundProof)
+    setRefundNote(''); setRefundProof(null)
+  }
   const confirmPayment = () => {
     if (!note.trim() || !proof) return
     setBookingStatus(b.id, 'Confirmed', note.trim(), proof)
@@ -81,6 +113,9 @@ export default function BookingDetail() {
           </span>
         }
         subtitle={`${p?.destinationCity} · ${b.category}`}
+        actions={isAdmin && b.status !== 'Cancelled' ? (
+          <Button variant="outline" size="sm" icon="x" className="border-status-urgent/40 text-status-urgent hover:bg-status-urgent-bg" onClick={() => setCancelOpen(true)}>Cancel booking</Button>
+        ) : null}
       />
 
       <div className="grid gap-6 px-4 py-5 sm:px-6 lg:px-8 lg:py-6 lg:grid-cols-3">
@@ -172,9 +207,7 @@ export default function BookingDetail() {
                   return (
                     <div key={i} className="rounded-xl border p-3.5">
                       <div className="flex items-center gap-2">
-                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-secondary text-primary">
-                          <Icon name={t.type === 'adult' ? 'users' : 'sparkle'} size={14} />
-                        </span>
+                        <Avatar name={name || t.label} size={28} />
                         <span className="text-sm font-semibold">{name || t.label}</span>
                         <span className="text-xs text-muted-foreground">
                           {t.label}{t.type === 'child' ? ` · ${t.bed === 'with' ? 'with bed' : 'no bed'}` : ''}
@@ -191,6 +224,22 @@ export default function BookingDetail() {
                           {t.passportExpiry && <Detail label="Passport expiry" value={shortDate(t.passportExpiry)} />}
                           {t.frequentFlyer && <Detail label="Frequent flyer" value={t.frequentFlyer} mono />}
                         </dl>
+                      )}
+                      {hotelBlock && blockCities(hotelBlock).length > 0 && (
+                        <div className="mt-2.5 grid gap-2 border-t pt-2.5 sm:grid-cols-3">
+                          {blockCities(hotelBlock).map((city) => {
+                            const opts = hotelOptionsForCity(hotelBlock, city, b.category)
+                            const val = t.hotelByCity?.[city] || ''
+                            const listId = `bh-${i}-${city.replace(/\W/g, '')}`
+                            return (
+                              <div key={city}>
+                                <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">{city}</p>
+                                <Input value={val} placeholder="Type hotel" list={listId} onChange={(e) => assignHotel(i, city, e.target.value)} className="h-9 text-xs" />
+                                <datalist id={listId}>{opts.map((o) => <option key={o} value={o} />)}</datalist>
+                              </div>
+                            )
+                          })}
+                        </div>
                       )}
                       {t.docs?.length > 0 ? (
                         <div className="mt-2.5 flex flex-wrap gap-2">
@@ -242,29 +291,67 @@ export default function BookingDetail() {
                   <p className="mt-2 text-xs text-muted-foreground">Held seats have been released back to inventory.</p>
 
                   {b.cancellation?.refundStatus && b.cancellation.refundStatus !== 'none' && (
-                    <div className="mt-3 rounded-xl border bg-card p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="mt-3 overflow-hidden rounded-xl border bg-card">
+                      {/* Refund summary row */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/30 px-4 py-3">
                         <div>
                           <p className="text-sm font-bold">Refund {inr(b.cancellation.refundAmount || 0)}</p>
                           <p className="text-xs text-muted-foreground">
                             {b.cancellation.appliedRule ? `Per policy: ${b.cancellation.appliedRule}` : 'Per cancellation policy'}
-                            {b.cancellation.amountPaid != null ? ` · on ${inr(b.cancellation.amountPaid)} paid` : ''}
+                            {b.cancellation.amountPaid != null ? ` · on ${inr(b.cancellation.amountPaid)} collected` : ''}
                           </p>
                         </div>
                         {b.cancellation.refundStatus === 'refunded'
-                          ? <StatusPill status="Confirmed" />
+                          ? <Pill tone="won" dot>Refunded</Pill>
                           : <Pill tone="urgent" dot>Refund pending</Pill>}
                       </div>
+
                       {b.cancellation.refundStatus === 'refunded' ? (
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          Refunded by {b.cancellation.refundedBy}{b.cancellation.refundedAt ? ` · ${shortDate(b.cancellation.refundedAt)}` : ''}
-                          {b.cancellation.refundNote ? ` — ${b.cancellation.refundNote}` : ''}
-                        </p>
-                      ) : isAdmin && (
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                          <Input value={refundNote} onChange={(e) => setRefundNote(e.target.value)} placeholder="Refund reference (UTR / mode)" className="max-w-xs" />
-                          <Button size="sm" icon="check" onClick={() => { markRefunded(b.id, refundNote.trim()); setRefundNote('') }}>Mark refunded</Button>
+                        /* Settled — show who confirmed it + the proof */
+                        <div className="flex items-start gap-3 p-4">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-status-won-bg text-status-won"><Icon name="check" size={18} /></span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold">Refund settled</p>
+                            <p className="text-xs text-muted-foreground">
+                              Confirmed by {b.cancellation.refundedBy}{b.cancellation.refundedAt ? ` · ${shortDate(String(b.cancellation.refundedAt).slice(0, 10))}` : ''}
+                            </p>
+                            {b.cancellation.refundNote && <p className="mt-1 text-xs">Ref: <span className="font-medium">{b.cancellation.refundNote}</span></p>}
+                            {b.cancellation.refundProof?.url && (
+                              <a href={b.cancellation.refundProof.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-1.5 text-xs font-medium hover:bg-muted">
+                                <Icon name="paperclip" size={13} className="text-primary" /><span className="max-w-[180px] truncate">{b.cancellation.refundProof.name || 'Proof'}</span>
+                              </a>
+                            )}
+                          </div>
                         </div>
+                      ) : (isAdmin || user?.role === 'operations') ? (
+                        /* Finance action — confirm the refund payout with a reference & proof */
+                        <div className="p-4">
+                          <div className="flex items-start gap-3">
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-status-urgent-bg text-status-urgent"><Icon name="wallet" size={18} /></span>
+                            <div>
+                              <p className="text-sm font-bold">Confirm refund payout</p>
+                              <p className="text-xs text-muted-foreground">Finance confirms the refund was paid to the guest. Add the reference and upload proof.</p>
+                            </div>
+                          </div>
+                          <Input value={refundNote} onChange={(e) => setRefundNote(e.target.value)} placeholder="Refund reference (UTR / mode)…" className="mt-3" />
+                          <div className="mt-2">
+                            <input ref={refundProofRef} type="file" accept="image/*,application/pdf" hidden onChange={onRefundProof} />
+                            {refundProof ? (
+                              <div className="flex items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2 text-xs">
+                                <span className="flex min-w-0 items-center gap-1.5"><Icon name="paperclip" size={13} className="text-primary" /><span className="truncate font-medium">{refundProof.name}</span></span>
+                                <button type="button" className="shrink-0 font-semibold text-muted-foreground hover:text-foreground" onClick={() => setRefundProof(null)}>Remove</button>
+                              </div>
+                            ) : (
+                              <Button type="button" size="sm" variant="outline" icon="plus" onClick={() => refundProofRef.current?.click()}>Upload proof (receipt / screenshot)</Button>
+                            )}
+                          </div>
+                          <div className="mt-3 flex items-center justify-between gap-2">
+                            <span className="text-[11px] text-muted-foreground">Reference &amp; proof are required.</span>
+                            <Button size="sm" icon="check" disabled={!refundNote.trim() || !refundProof} onClick={confirmRefund}>Confirm refund paid</Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="p-4 text-xs text-muted-foreground">Refund is pending finance confirmation.</p>
                       )}
                     </div>
                   )}
@@ -277,6 +364,25 @@ export default function BookingDetail() {
           {isAdmin && b.status !== 'Cancelled' && (
             <Card className="p-5">
               <Eyebrow className="mb-3">Payment &amp; status</Eyebrow>
+
+              {/* Money breakdown — total, advance collected, balance due */}
+              <div className="mb-4 grid gap-2 rounded-xl border p-4">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Total</span>
+                  <span className="font-bold tabular-nums">{inr(b.amount)}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Advance collected</span>
+                  <span className="font-semibold tabular-nums text-status-won">{inr(advancePaid)}</span>
+                </div>
+                <div className="flex items-center justify-between border-t pt-2 text-sm">
+                  <span className="font-semibold">Balance due</span>
+                  <span className={cx('text-lg font-bold tabular-nums', balanceDue > 0 ? 'text-status-urgent' : 'text-status-won')}>{inr(balanceDue)}</span>
+                </div>
+                {balanceDue > 0 && balanceDueDate && (
+                  <p className="text-xs font-medium text-status-urgent">Balance due by {shortDate(balanceDueDate)} · {bdDays}d before travel</p>
+                )}
+              </div>
 
               {b.status !== 'Confirmed' ? (
                 <div className="rounded-xl border border-status-won/30 bg-status-won-bg/40 p-4">
@@ -325,11 +431,6 @@ export default function BookingDetail() {
                   )}
                 </div>
               )}
-
-              <div className="mt-4 flex items-center justify-between gap-2 border-t pt-4">
-                <span className="text-xs text-muted-foreground">Cancel this booking (guest or operator initiated).</span>
-                <Button variant="danger" size="sm" icon="x" onClick={() => setCancelOpen(true)}>Cancel booking</Button>
-              </div>
             </Card>
           )}
 
@@ -362,28 +463,51 @@ export default function BookingDetail() {
                 <span className="text-sm font-semibold">Total</span>
                 <span className="text-2xl font-bold tabular-nums">{inr(b.amount)}</span>
               </div>
+              {/* Advance collected vs balance still due (per payment policy) */}
+              {(() => {
+                const paid = b.advanceAmount || 0
+                const due = Math.max(0, (b.amount || 0) - paid)
+                return (
+                  <div className="mt-3 grid gap-1.5 rounded-xl border p-3 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Advance collected</span>
+                      <span className="font-semibold tabular-nums">{inr(paid)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Balance due</span>
+                      <span className={cx('font-bold tabular-nums', due > 0 ? 'text-status-urgent' : 'text-status-won')}>{inr(due)}</span>
+                    </div>
+                    {due > 0 && d?.date && (() => {
+                      const bdDays = p?.payment?.balanceDueDays ?? 10
+                      const dueDate = new Date(new Date(d.date).getTime() - bdDays * 86400000).toISOString().slice(0, 10)
+                      return <p className="text-xs font-medium text-status-urgent">Balance due by {shortDate(dueDate)} · {bdDays}d before travel</p>
+                    })()}
+                  </div>
+                )
+              })()}
+              {/* Payment approval */}
+              {b.paymentApproved ? (
+                <div className="mt-3 flex items-center gap-2 rounded-xl bg-status-won-bg px-3 py-2 text-xs font-semibold text-status-won">
+                  <Icon name="check" size={14} />
+                  Payment approved{b.approvedBy ? ` · ${b.approvedBy}` : ''}{b.approvedAt ? ` · ${logWhen(b.approvedAt)}` : ''}
+                </div>
+              ) : b.paymentNote && b.status !== 'Cancelled' && (isAdmin || user?.role === 'operations') ? (
+                <Button icon="check" className="mt-3 w-full" onClick={() => approveBookingPayment(b.id)}>Approve payment</Button>
+              ) : null}
             </Card>
 
-            {/* Status timeline — every update on this booking */}
+            {/* Status timeline — most recent few, with a "View all" modal */}
             <Card className="p-5">
-              <Eyebrow className="mb-4">Status updates</Eyebrow>
-              <ol className="relative grid gap-4 border-l pl-5">
-                {timeline.map((e, i) => (
-                  <li key={i} className="relative">
-                    <span className="absolute -left-[26px] top-1 h-3 w-3 rounded-full ring-4 ring-card"
-                      style={{ background: `var(--color-status-${e.tone})` }} />
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-semibold">{e.label}</span>
-                      {e.at && <span className="text-xs text-muted-foreground">· {shortDate(e.at)}</span>}
-                    </div>
-                    {(e.by || e.note) && (
-                      <p className="text-xs text-muted-foreground">
-                        {e.by ? `by ${e.by}` : ''}{e.note ? `${e.by ? ' — ' : ''}${e.note}` : ''}
-                      </p>
-                    )}
-                  </li>
-                ))}
-              </ol>
+              <div className="mb-4 flex items-center justify-between">
+                <Eyebrow>Status updates</Eyebrow>
+                <span className="text-xs font-semibold text-muted-foreground">{timeline.length}</span>
+              </div>
+              <TimelineList items={timeline.slice(-5)} logWhen={logWhen} />
+              {timeline.length > 5 && (
+                <Button variant="outline" size="sm" className="mt-4 w-full" onClick={() => setAllUpdatesOpen(true)}>
+                  View all {timeline.length} updates
+                </Button>
+              )}
             </Card>
           </div>
         </aside>
@@ -404,7 +528,36 @@ export default function BookingDetail() {
         onClose={() => setCancelOpen(false)}
         onConfirm={(type, reason) => { cancelBooking(b.id, type, reason); setCancelOpen(false) }}
       />
+      <Modal open={allUpdatesOpen} onClose={() => setAllUpdatesOpen(false)} title="Status updates" subtitle={`${timeline.length} updates on ${b.ref}`} width="max-w-lg">
+        <div className="max-h-[65vh] overflow-y-auto pr-1">
+          <TimelineList items={timeline} logWhen={logWhen} />
+        </div>
+      </Modal>
     </>
+  )
+}
+
+// Vertical activity list used inline and inside the "view all" modal.
+function TimelineList({ items, logWhen }) {
+  return (
+    <ol className="relative grid gap-4 border-l pl-5">
+      {items.map((e, i) => (
+        <li key={i} className="relative">
+          <span className="absolute -left-[26px] top-1 h-3 w-3 rounded-full ring-4 ring-card"
+            style={{ background: `var(--color-status-${e.tone})` }} />
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold">{e.label}</span>
+            {e.at && <span className="text-xs text-muted-foreground">· {logWhen(e.at)}</span>}
+          </div>
+          {(e.by || e.note) && (
+            <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+              {e.by && <Avatar name={e.by} size={18} />}
+              <span>{e.by ? `by ${e.by}` : ''}{e.note ? `${e.by ? ' — ' : ''}${e.note}` : ''}</span>
+            </div>
+          )}
+        </li>
+      ))}
+    </ol>
   )
 }
 

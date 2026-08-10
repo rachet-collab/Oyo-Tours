@@ -40,7 +40,7 @@ function Stat({ label, value, icon }) {
 // Inventory overview; shows filters, stats and the block table for that type.
 export default function InventoryList({ type = 'airline' }) {
   const isHotelView = type === 'hotel'
-  const { inventoryView, deleteInventory, packageById } = useApp()
+  const { inventoryView, deleteInventory, updateInventory, packageById } = useApp()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [life, setLife] = useState('active') // 'active' | 'inactive'
@@ -78,8 +78,22 @@ export default function InventoryList({ type = 'airline' }) {
   // Pagination.
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(10)
-  useEffect(() => { setPage(1) }, [query, fromCity, toCity, month, life, type])
+  // Multi-select.
+  const [sel, setSel] = useState(() => new Set())
+  useEffect(() => { setPage(1); setSel(new Set()) }, [query, fromCity, toCity, month, life, type])
   const pageRows = useMemo(() => rows.slice((page - 1) * perPage, page * perPage), [rows, page, perPage])
+  const toggleSel = (id) => setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const allOnPage = pageRows.length > 0 && pageRows.every((i) => sel.has(i.id))
+  const toggleAllOnPage = () => setSel((s) => {
+    const n = new Set(s)
+    if (allOnPage) pageRows.forEach((i) => n.delete(i.id))
+    else pageRows.forEach((i) => n.add(i.id))
+    return n
+  })
+  const selectedRows = useMemo(() => rows.filter((i) => sel.has(i.id)), [rows, sel])
+  const selInactive = selectedRows.filter((i) => i.status === 'Inactive')
+  const bulkDelink = () => { selectedRows.forEach((i) => { if (i.packageId) updateInventory(i.id, { packageId: '' }) }); setSel(new Set()) }
+  const bulkDelete = () => { selInactive.forEach((i) => deleteInventory(i.id)); setSel(new Set()) }
 
   // Stats reflect the CURRENT filtered rows, not just the lifecycle tab.
   const s = useMemo(() => ({
@@ -174,6 +188,19 @@ export default function InventoryList({ type = 'airline' }) {
           <Stat label="Released" value={s.released} icon="logout" />
         </div>
 
+        {sel.size > 0 && (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-foreground px-4 py-2.5 text-background">
+            <span className="text-sm font-semibold">{sel.size} selected</span>
+            <div className="ml-auto flex items-center gap-2">
+              <Button size="sm" variant="outline" icon="unlink" className="border-background/30 bg-transparent text-background hover:bg-background/10" onClick={bulkDelink}>Delink</Button>
+              <Button size="sm" variant="outline" className="border-background/30 bg-transparent text-background hover:bg-background/10" disabled={selInactive.length === 0} onClick={bulkDelete}>
+                Delete{selInactive.length ? ` (${selInactive.length})` : ''}
+              </Button>
+              <button type="button" onClick={() => setSel(new Set())} className="text-xs font-semibold text-background/80 hover:text-background">Clear</button>
+            </div>
+          </div>
+        )}
+
         <Card className="overflow-hidden">
           {rows.length === 0 ? (
             <EmptyState icon="boxes" title="No inventory found" hint="Add a record, upload in bulk, or adjust your filters." />
@@ -182,6 +209,10 @@ export default function InventoryList({ type = 'airline' }) {
               <table className="w-full min-w-[1040px] text-sm">
                 <thead>
                   <tr className="border-b bg-muted/60 text-left text-[13px] font-semibold text-muted-foreground">
+                    <th className="w-10 px-4 py-3">
+                      <input type="checkbox" checked={allOnPage} onChange={toggleAllOnPage} aria-label="Select all"
+                        className="h-4 w-4 cursor-pointer rounded border-border accent-foreground" />
+                    </th>
                     <th className="px-5 py-3">Inventory</th>
                     <th className="px-3 py-3">Package</th>
                     <th className="px-3 py-3">Route / stay</th>
@@ -197,10 +228,18 @@ export default function InventoryList({ type = 'airline' }) {
                     const pkg = pkgOf(i)
                     return (
                       <tr key={i.id} onClick={() => navigate(`${detailBase}/${i.id}`)}
-                        className={cx('cursor-pointer border-t transition-colors hover:bg-muted/40 [&>td]:px-3 [&>td]:py-4 [&>td]:align-middle', hot && 'bg-status-urgent-bg/20')}>
+                        className={cx('cursor-pointer border-t transition-colors hover:bg-muted/40 [&>td]:px-3 [&>td]:py-4 [&>td]:align-middle', sel.has(i.id) && 'bg-secondary/40', hot && 'bg-status-urgent-bg/20')}>
+                        <td className="!px-4" onClick={(e) => e.stopPropagation()}>
+                          <input type="checkbox" checked={sel.has(i.id)} onChange={() => toggleSel(i.id)} aria-label={`Select ${i.inventoryId}`}
+                            className="h-4 w-4 cursor-pointer rounded border-border accent-foreground" />
+                        </td>
                         <td className="!px-5">
                           <div className="flex items-center gap-3">
-                            <InventoryImage inv={i} size={38} />
+                            {isHotelView && pkg?.coverUrl ? (
+                              <img src={pkg.coverUrl} alt={pkg.name} className="h-[38px] w-[38px] shrink-0 rounded-lg object-cover" />
+                            ) : (
+                              <InventoryImage inv={i} size={38} />
+                            )}
                             <div className="min-w-0">
                               <p className="font-mono text-xs font-semibold">{i.inventoryId}</p>
                               <p className="text-xs text-muted-foreground">{i.airline}</p>
@@ -214,8 +253,16 @@ export default function InventoryList({ type = 'airline' }) {
                               <p className="font-mono text-xs text-muted-foreground">{pkg.code}</p>
                             </div>
                           ) : (
-                            <span className="inline-flex items-center gap-1.5 rounded-lg bg-status-urgent-bg px-2 py-1 text-xs font-semibold text-status-urgent">
-                              <span className="h-1.5 w-1.5 rounded-full bg-status-urgent" /> Unlinked
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="inline-flex items-center gap-1.5 rounded-lg bg-status-urgent-bg px-2 py-1 text-xs font-semibold text-status-urgent">
+                                <span className="h-1.5 w-1.5 rounded-full bg-status-urgent" /> Unlinked
+                              </span>
+                              <span className="group relative inline-flex" onClick={(e) => e.stopPropagation()}>
+                                <Icon name="info" size={14} className="cursor-help text-muted-foreground" />
+                                <span className="pointer-events-none absolute left-1/2 top-full z-30 mt-1.5 w-56 -translate-x-1/2 rounded-lg bg-foreground px-3 py-2 text-xs font-medium leading-relaxed text-background opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+                                  Not tied to a package yet. Link it to a package so it shows against that package's bookings and counts toward utilisation.
+                                </span>
+                              </span>
                             </span>
                           )}
                         </td>

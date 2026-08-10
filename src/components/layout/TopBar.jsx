@@ -1,5 +1,6 @@
 import Icon from '../ui/Icon.jsx'
 import { useLayout } from './layout-context.js'
+import NotificationBell from '../NotificationBell.jsx'
 
 // The signed-in user, settings and logout live in the sidebar, so the top bar
 // only carries the page title/subtitle and any page-level action buttons.
@@ -33,6 +34,7 @@ export default function TopBar({ title, subtitle, actions }) {
           <Icon name="calendar" size={15} className="text-primary" />
           <span className="tabular-nums">{today}</span>
         </div>
+        <NotificationBell />
         {actions && <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">{actions}</div>}
       </div>
     </header>

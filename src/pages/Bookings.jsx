@@ -36,22 +36,34 @@ export default function Bookings() {
   const filterPkg = pkgFilter ? packageById(pkgFilter) : null
   const [filter, setFilter] = useState('All')
   const [query, setQuery] = useState('')
+  const [agent, setAgent] = useState('')
   const isAdmin = user?.role === 'admin'
+  const isSales = user?.role === 'sales'
 
   // All internal roles see every booking — optionally scoped to one package.
   const visible = pkgFilter ? bookings.filter((b) => b.packageId === pkgFilter) : bookings
+
+  const agentOptions = useMemo(() => [...new Set(visible.map((b) => b.agent).filter(Boolean))].sort(), [visible])
+  const namesPending = (b) => Math.max(0, (b.seats || 0) - (b.travellerDetails?.length || 0))
+  // Rooms booked: adults are twin-sharing (2 per room), singles take their own
+  // room; extra-bed / child-with-bed / child-without-bed share existing rooms.
+  const roomsFor = (b) => {
+    const p = b.pax || {}
+    return Math.ceil((Number(p.adult) || 0) / 2) + (Number(p.single) || 0)
+  }
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
     return visible.filter((b) => {
       if (filter !== 'All' && b.status !== filter) return false
+      if (agent && b.agent !== agent) return false
       if (!q) return true
       const g = guestById(b.guestId)
       const p = packageById(b.packageId)
-      return [b.ref, g?.name, p?.destinationCity, p?.origin, p?.code, b.category]
+      return [b.ref, g?.name, p?.destinationCity, p?.origin, p?.code, b.category, b.agent]
         .filter(Boolean).some((s) => String(s).toLowerCase().includes(q))
     })
-  }, [visible, filter, query, guestById, packageById])
+  }, [visible, filter, query, agent, guestById, packageById])
   const counts = useMemo(() => {
     const c = { All: visible.length }
     ;[...BOOKING_STATUSES, 'Cancelled'].forEach((s) => (c[s] = visible.filter((b) => b.status === s).length))
@@ -61,18 +73,20 @@ export default function Bookings() {
   // Pagination
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(10)
-  useEffect(() => { setPage(1) }, [filter, query, pkgFilter])
+  useEffect(() => { setPage(1) }, [filter, query, agent, pkgFilter])
   const pageRows = useMemo(() => shown.slice((page - 1) * perPage, page * perPage), [shown, page, perPage])
-  const hasFilters = filter !== 'All' || !!query.trim()
+  const hasFilters = filter !== 'All' || !!query.trim() || !!agent
 
   return (
     <>
       <TopBar
-        title="Bookings"
+        title={isSales ? 'My bookings' : 'Bookings'}
         subtitle={
           isAdmin
             ? 'Track bookings and confirm offline payments.'
-            : 'Package bookings and their payment status.'
+            : isSales
+              ? 'Bookings you have logged and their payment status.'
+              : 'Package bookings and their payment status.'
         }
       />
 
@@ -95,9 +109,19 @@ export default function Bookings() {
               tone: f === 'All' ? 'dark' : STATUS_TONE[f],
             }))}
           />
-          <div className="relative">
-            <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search reference or guest name" className="w-72 pl-9" />
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search reference, guest or agent" className="w-64 pl-9" />
+            </div>
+            {!isSales && (
+              <div className="w-44">
+                <Select value={agent} onChange={(e) => setAgent(e.target.value)}>
+                  <option value="">All agents</option>
+                  {agentOptions.map((a) => <option key={a} value={a}>{a}</option>)}
+                </Select>
+              </div>
+            )}
           </div>
         </div>
 
@@ -105,8 +129,9 @@ export default function Bookings() {
         {hasFilters && (
           <div className="flex flex-wrap items-center gap-2">
             {filter !== 'All' && <Chip label="Status" value={filter} onClear={() => setFilter('All')} />}
+            {agent && <Chip label="Logged by" value={agent} onClear={() => setAgent('')} />}
             {query.trim() && <Chip label="Search" value={query} onClear={() => setQuery('')} />}
-            <button type="button" onClick={() => { setFilter('All'); setQuery('') }} className="ml-1 inline-flex items-center gap-1.5 text-xs font-semibold text-status-urgent hover:underline">
+            <button type="button" onClick={() => { setFilter('All'); setQuery(''); setAgent('') }} className="ml-1 inline-flex items-center gap-1.5 text-xs font-semibold text-status-urgent hover:underline">
               <DeleteIcon size={14} /> Clear
             </button>
           </div>
@@ -117,13 +142,16 @@ export default function Bookings() {
             <EmptyState icon="ticket" title="No bookings here" hint="Create a new booking or switch filters." />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] text-sm">
+              <table className="w-full min-w-[1320px] text-sm">
                 <thead>
                   <tr className="border-b bg-muted/60 text-left text-[13px] font-semibold text-muted-foreground">
                     <th className="px-5 py-3 font-semibold">Reference</th>
                     <th className="px-3 py-3 font-semibold">Guest</th>
                     <th className="px-3 py-3 font-semibold">Package · Departure</th>
+                    <th className="px-3 py-3 font-semibold">Logged by</th>
                     <th className="px-3 py-3 font-semibold">Pax</th>
+                    <th className="px-3 py-3 font-semibold">Rooms booked</th>
+                    <th className="px-3 py-3 font-semibold">Names pending</th>
                     <th className="px-3 py-3 font-semibold">Amount</th>
                     <th className="px-3 py-3 font-semibold">Status</th>
                     <th className="px-5 py-3 text-right font-semibold">Action</th>
@@ -162,8 +190,29 @@ export default function Bookings() {
                           </p>
                         </td>
                         <td className="px-3 py-3">
+                          {b.agent ? (
+                            <div className="flex items-center gap-2">
+                              <Avatar name={b.agent} size={22} />
+                              <span className="text-xs font-medium">{b.agent}</span>
+                            </div>
+                          ) : <span className="text-xs text-muted-foreground">—</span>}
+                        </td>
+                        <td className="px-3 py-3">
                           <span className="font-semibold tabular-nums">{b.seats}</span>
                           <span className="text-xs text-muted-foreground"> seats</span>
+                        </td>
+                        <td className="px-3 py-3">
+                          <span className="font-semibold tabular-nums">{roomsFor(b)}</span>
+                          <span className="text-xs text-muted-foreground"> room{roomsFor(b) === 1 ? '' : 's'}</span>
+                        </td>
+                        <td className="px-3 py-3">
+                          {namesPending(b) > 0 ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-lg bg-status-proposal-bg px-2 py-1 text-xs font-semibold text-status-proposal">
+                              {namesPending(b)} pending
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 rounded-lg bg-status-won-bg px-2 py-1 text-xs font-semibold text-status-won">All named</span>
+                          )}
                         </td>
                         <td className="px-3 py-3 font-semibold tabular-nums">
                           {inr(b.amount)}

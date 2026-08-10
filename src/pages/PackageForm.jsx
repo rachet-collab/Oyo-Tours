@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import TopBar from '../components/layout/TopBar.jsx'
 import Icon from '../components/ui/Icon.jsx'
 import InventoryImage from '../components/InventoryImage.jsx'
+import InventoryImport from './InventoryImport.jsx'
 import * as XLSX from 'xlsx'
 import { Button, Card, Eyebrow, Field, Input, Modal, Pill, Select, Textarea } from '../components/ui/primitives.jsx'
 import { useApp } from '../store/AppStore.jsx'
@@ -222,6 +223,40 @@ export default function PackageForm() {
       const others = hs.filter((h) => h.category !== cat)
       return [...others, { category: cat, rows }]
     })
+  // Rooms are tracked as ONE total per city (not per category). Derive the
+  // unique city list from every category's rows, and read/write a single rooms
+  // value that stays in sync across all rows sharing that city.
+  const uniqueHotelCities = () => {
+    const seen = []
+    hotels.forEach((h) => (h.rows || []).forEach((r) => {
+      const c = String(r.city || '').trim()
+      if (c && !seen.some((x) => x.toLowerCase() === c.toLowerCase())) seen.push(c)
+    }))
+    return seen
+  }
+  // Rooms are captured per city (the hotel inventory). Reading/writing keeps
+  // every category row for a city in sync on that city's number.
+  const cityRooms = (city) => {
+    for (const h of hotels) {
+      const row = (h.rows || []).find((r) => String(r.city || '').trim().toLowerCase() === city.toLowerCase() && r.rooms !== '' && r.rooms != null)
+      if (row) return row.rooms
+    }
+    return ''
+  }
+  const setCityRooms = (city, val) =>
+    setHotels((hs) => hs.map((h) => ({
+      ...h,
+      rows: (h.rows || []).map((r) => (String(r.city || '').trim().toLowerCase() === city.toLowerCase() ? { ...r, rooms: val } : r)),
+    })))
+  // A single "rooms per city" figure applied uniformly to every city.
+  const allCityRooms = () => {
+    const cities = uniqueHotelCities()
+    if (!cities.length) return ''
+    const vals = cities.map((c) => cityRooms(c))
+    return vals.every((v) => String(v) === String(vals[0])) ? (vals[0] ?? '') : ''
+  }
+  const setAllCityRooms = (val) =>
+    setHotels((hs) => hs.map((h) => ({ ...h, rows: (h.rows || []).map((r) => ({ ...r, rooms: val })) })))
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
   const toggleCat = (c) =>
@@ -239,9 +274,46 @@ export default function PackageForm() {
       e.target.value = ''
     }
   }
-  const canSave = form.name && form.destinationCity && categories.length > 0
-
   const cats = ALL_CATEGORIES.filter((c) => categories.includes(c))
+
+  // Completeness — every tab must have its essentials before a package can be
+  // created/saved. `checklist[tab].missing` drives the tab dots + the summary.
+  const num = (v) => Number(v) || 0
+  const existingDeps = editing ? departuresForPackage(existing.id) : []
+  const allDeps = [...existingDeps, ...deps]
+  const checklist = {
+    details: {
+      label: 'Package details',
+      missing: [
+        !form.name?.trim() && 'Package name',
+        !form.origin?.trim() && 'Origin',
+        !form.destinationCity?.trim() && 'Destination city',
+        !form.country?.trim() && 'Country',
+        !(num(form.nights) > 0) && 'Nights',
+        !(num(form.days) > 0) && 'Days',
+        !form.destinationsLabel?.trim() && 'Destinations',
+        categories.length === 0 && 'Categories',
+      ].filter(Boolean),
+    },
+    departures: { label: 'Departures', missing: allDeps.length === 0 ? ['At least one departure'] : [] },
+    pricing: {
+      label: 'Pricing',
+      missing: allDeps.length === 0
+        ? ['Add departures first']
+        : (allDeps.some((d) => cats.some((c) => !(num(d.pricing?.[c]?.adult) > 0))) ? ['Adult price for every departure & category'] : []),
+    },
+    hotels: {
+      label: 'Hotels',
+      missing: cats.filter((c) => !((hotels.find((h) => h.category === c)?.rows || []).some((r) => (r.city || '').trim() && (r.options || '').trim()))).map((c) => `${c} hotels`),
+    },
+    itinerary: { label: 'Itinerary', missing: itinerary.some((it) => (it.title || '').trim()) ? [] : ['At least one itinerary day'] },
+    inclusions: { label: 'Inclusions', missing: inclusions.some((s) => (s || '').trim()) ? [] : ['At least one inclusion'] },
+    policy: { label: 'Policy', missing: cancellation.some((c) => c.days !== '' && c.days != null) ? [] : ['At least one cancellation rule'] },
+    terms: { label: 'Terms & Conditions', missing: (terms || '').trim() ? [] : ['Terms text'] },
+  }
+  const incompleteTabs = Object.keys(checklist).filter((k) => checklist[k].missing.length > 0)
+  const missingCount = Object.values(checklist).reduce((n, v) => n + v.missing.length, 0)
+  const canSave = missingCount === 0
 
   const save = () => {
     const nights = Number(form.nights) || 0
@@ -354,11 +426,12 @@ export default function PackageForm() {
               type="button"
               onClick={() => setTab(k)}
               className={cx(
-                'relative -mb-px border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors',
+                'relative -mb-px inline-flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors',
                 tab === k ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
               )}
             >
               {label}
+              {incompleteTabs.includes(k) && <span className="h-1.5 w-1.5 rounded-full bg-status-urgent" title="Incomplete" />}
             </button>
           ))}
         </div>
@@ -374,49 +447,27 @@ export default function PackageForm() {
                   <Input value={form.name} onChange={set('name')} placeholder="Bali Fixed Departure" />
                 </Field>
               </div>
-              <Field label="Origin">
+              <Field label="Origin" required>
                 <Input value={form.origin} onChange={set('origin')} placeholder="Ex Delhi" />
               </Field>
               <Field label="Destination city" required hint="Used for display.">
                 <Input value={form.destinationCity} onChange={set('destinationCity')} placeholder="Bali" />
               </Field>
-              <Field label="Country">
+              <Field label="Country" required>
                 <Input value={form.country} onChange={set('country')} placeholder="Indonesia" />
               </Field>
               <div />
-              <Field label="Nights">
+              <Field label="Nights" required>
                 <Input type="number" min="0" value={form.nights} onChange={set('nights')} placeholder="5" />
               </Field>
-              <Field label="Days" hint="Duration shows as e.g. 5N / 6D.">
+              <Field label="Days" required hint="Duration shows as e.g. 5N / 6D.">
                 <Input type="number" min="0" value={form.days} onChange={set('days')} placeholder="6" />
               </Field>
               <div className="sm:col-span-2">
-                <Field label="Destinations" hint="e.g. 2N Ubud · 3N Kuta">
+                <Field label="Destinations" required hint="e.g. 2N Ubud · 3N Kuta">
                   <Input value={form.destinationsLabel} onChange={set('destinationsLabel')} placeholder="2N Ubud · 3N Kuta" />
                 </Field>
               </div>
-            </div>
-
-            <div className="mt-5">
-              <Field label="Categories" required hint="Pricing tiers offered for this package.">
-                <div className="flex flex-wrap gap-2">
-                  {ALL_CATEGORIES.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => toggleCat(c)}
-                      className={cx(
-                        'rounded-xl border px-3 py-1.5 text-[13px] font-semibold transition-colors',
-                        categories.includes(c)
-                          ? 'border-primary bg-secondary text-secondary-foreground'
-                          : 'hover:bg-muted',
-                      )}
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
-              </Field>
             </div>
           </Card>
 
@@ -485,11 +536,34 @@ export default function PackageForm() {
 
         {tab === 'hotels' && (
           <div className="grid gap-6">
+            {/* Categories — chosen here, alongside the hotels they price */}
+            <Card className="p-6">
+              <Field label="Categories" required hint="Pricing tiers offered for this package.">
+                <div className="flex flex-wrap gap-2">
+                  {ALL_CATEGORIES.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => toggleCat(c)}
+                      className={cx(
+                        'rounded-xl border px-3 py-1.5 text-[13px] font-semibold transition-colors',
+                        categories.includes(c)
+                          ? 'border-primary bg-secondary text-secondary-foreground'
+                          : 'hover:bg-muted',
+                      )}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+            </Card>
+
             {/* Hotels */}
             <Card className="p-6">
               <SectionHead icon="building" title="Hotels" hint="Hotel options per city, for each selected category." />
               {cats.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Select at least one category in Package details first.</p>
+                <p className="text-sm text-muted-foreground">Select at least one category above first.</p>
               ) : (
                 <div className="grid gap-4">
                   {cats.map((c) => (
@@ -511,13 +585,26 @@ export default function PackageForm() {
                         ))}
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <Button variant="ghost" size="sm" icon="plus" onClick={() => setHotelRows(c, [...hotelRows(c), { city: '', options: '' }])}>Add city</Button>
+                        <Button variant="ghost" size="sm" icon="plus" onClick={() => setHotelRows(c, [...hotelRows(c), { city: '', options: '', rooms: '' }])}>Add city</Button>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
             </Card>
+
+            {/* Rooms per city — the hotel inventory quantity for each city */}
+            {uniqueHotelCities().length > 0 && (
+              <Card className="p-6">
+                <SectionHead icon="boxes" title="Rooms per city" hint="One room block applied to every city. This is your hotel inventory for the destination." />
+                <div className="flex items-center gap-3 rounded-xl border p-3 sm:max-w-sm">
+                  <div className="w-28">
+                    <Input type="number" min="0" value={allCityRooms()} placeholder="0" onChange={(e) => setAllCityRooms(e.target.value)} />
+                  </div>
+                  <span className="text-sm text-muted-foreground">rooms per city · applies to {uniqueHotelCities().join(', ')}</span>
+                </div>
+              </Card>
+            )}
           </div>
         )}
 
@@ -854,14 +941,16 @@ function DeparturesEditor({ view = 'departures', cats, deps, setDeps, existingDe
     setEditId(null); setEdit(null)
   }
 
-  // Available flight inventory to link against — live blocks with seats left.
-  const liveOf = (t) => inventoryView.filter((i) => (i.type || 'airline') === t && i.status !== 'Inactive' && i.available > 0)
+  // Available flight inventory to link against — active, unlinked blocks with
+  // seats left. Inventory already linked to a package can't be linked again.
+  const liveOf = (t) => inventoryView.filter((i) => (i.type || 'airline') === t && i.status !== 'Inactive' && i.available > 0 && !i.packageId)
   const flightAll = liveOf('airline')
 
   // "Choose from inventory" vs "Enter manually", and multi-select of blocks.
   const [mode, setMode] = useState('inventory')
   const [selected, setSelected] = useState([])
   const [showNew, setShowNew] = useState(false) // the "New departure" picker is hidden until asked for
+  const [bulkOpen, setBulkOpen] = useState(false) // flight-inventory bulk-upload modal
   const toggleSel = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
   // City / month filters for the inventory picker.
   const [fFrom, setFFrom] = useState('')
@@ -1132,8 +1221,9 @@ function DeparturesEditor({ view = 'departures', cats, deps, setDeps, existingDe
 
         {/* Add-departures toggle */}
         {!showNew ? (
-          <div className="mt-4">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" icon="plus" onClick={() => setShowNew(true)}>Add departures</Button>
+            <Button variant="outline" size="sm" icon="upload" onClick={() => setBulkOpen(true)}>Bulk upload inventory</Button>
           </div>
         ) : (
         <div className="mt-4 rounded-xl border bg-muted/30 p-4">
@@ -1218,6 +1308,9 @@ function DeparturesEditor({ view = 'departures', cats, deps, setDeps, existingDe
         )}
       </Card>
       )}
+
+      {/* Flight-inventory bulk upload (modal) */}
+      <InventoryImport type="airline" open={bulkOpen} onClose={() => setBulkOpen(false)} />
 
       {/* ---------------- Pricing configuration ---------------- */}
       {view === 'pricing' && (

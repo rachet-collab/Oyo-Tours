@@ -20,6 +20,25 @@ import PackageImport from './PackageImport.jsx'
 
 const cx = (...c) => c.filter(Boolean).join(' ')
 const MONTHS_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// Package code with a copy-to-clipboard button (used inside the card Link).
+function CopyCode({ code }) {
+  const [copied, setCopied] = useState(false)
+  const copy = (e) => {
+    e.preventDefault(); e.stopPropagation()
+    navigator.clipboard?.writeText(code)
+    setCopied(true); setTimeout(() => setCopied(false), 1200)
+  }
+  return (
+    <span className="ml-auto inline-flex items-center gap-1">
+      <span className="font-mono text-[11px] font-medium text-muted-foreground">{code}</span>
+      <button type="button" onClick={copy} aria-label={`Copy ${code}`} title="Copy code"
+        className={cx('flex h-5 w-5 items-center justify-center rounded-md transition-colors', copied ? 'text-status-won' : 'text-muted-foreground hover:bg-muted hover:text-foreground')}>
+        <Icon name={copied ? 'check' : 'copy'} size={12} />
+      </button>
+    </span>
+  )
+}
 const monthLabel = (key) => {
   const [y, m] = key.split('-')
   return `${MONTHS_ABBR[+m - 1]} ${y}`
@@ -170,7 +189,7 @@ export default function Packages() {
                       </Pill>
                     ))}
                     {!isActive(p) && <Pill tone="urgent">Inactive</Pill>}
-                    {p.code && <span className="ml-auto font-mono text-[11px] font-semibold text-muted-foreground">{p.code}</span>}
+                    {p.code && <CopyCode code={p.code} />}
                   </div>
                   <h3 className="mt-2.5 text-base font-bold leading-tight">
                     {p.name}

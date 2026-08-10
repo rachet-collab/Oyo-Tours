@@ -45,6 +45,8 @@ const autoInvKeys = new Set()
 const normFlight = (f) => String(f || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 const genRef = () => `OYO-${Math.floor(20000 + Math.random() * 79999)}`
 const today = () => new Date().toISOString().slice(0, 10)
+// Full timestamp (date + time) for activity-log entries.
+const stamp = () => new Date().toISOString()
 const roleLabel = (role) => ({ admin: 'Admin', operations: 'Operations', sales: 'Sales' }[role] || 'Sales')
 const daysUntil = (iso) =>
   iso ? Math.round((new Date(iso + 'T00:00:00') - new Date(today() + 'T00:00:00')) / 86400000) : null
@@ -154,8 +156,18 @@ const withTravellers = (x, { details, names, by, at }) => ({
   ...x, travellerDetails: details, travellers: names,
   history: [...(x.history || []), { status: x.status, note: 'Traveller details updated', by: by || 'System', at: at || '' }],
 })
-const withApproved = (x, { by, at }) => ({ ...x, paymentApproved: true, approvedBy: by, approvedAt: at })
-const withRefunded = (x, { by, at, note }) => ({ ...x, cancellation: { ...(x.cancellation || {}), refundStatus: 'refunded', refundedBy: by, refundedAt: at, refundNote: note } })
+// Approving the payment confirms the booking (unless it was cancelled).
+const withApproved = (x, { by, at }) => {
+  const status = x.status === 'Cancelled' ? x.status : 'Confirmed'
+  const confirmed = status === 'Confirmed' && x.status !== 'Confirmed'
+  return {
+    ...x, paymentApproved: true, approvedBy: by, approvedAt: at, status,
+    history: confirmed
+      ? [...(x.history || []), { status: 'Confirmed', note: 'Payment approved — booking confirmed', by: by || 'System', at: at || '' }]
+      : (x.history || []),
+  }
+}
+const withRefunded = (x, { by, at, note, proof }) => ({ ...x, cancellation: { ...(x.cancellation || {}), refundStatus: 'refunded', refundedBy: by, refundedAt: at, refundNote: note, refundProof: proof || (x.cancellation || {}).refundProof || null } })
 // Roll a booking's seats + manifest into a linked inventory record.
 const allocateInto = (inv, booking) => ({
   ...inv,
@@ -302,7 +314,7 @@ function reducer(state, action) {
       return {
         ...state,
         bookings: state.bookings.map((x) =>
-          x.id === action.bookingId ? withRefunded(x, { by: action.by, at: action.at, note: action.note }) : x),
+          x.id === action.bookingId ? withRefunded(x, { by: action.by, at: action.at, note: action.note, proof: action.proof }) : x),
       }
 
     default:
@@ -356,36 +368,50 @@ export function AppProvider({ children }) {
       }
     }
 
-    // Mirror a package's hotel options into Inventory as hotel room blocks, so
-    // hotels added on the package page show up as inventory too. One block per
-    // (city, property); rooms/dates start blank for ops to fill in. Deduped.
+    // Mirror a package's hotels into Inventory as ONE hotel block for the whole
+    // destination — the group travels together, so the room total is a single
+    // block that applies to every city. Each city (with its category + hotel
+    // options) is nested under `cities`, shown when you open the block.
     const autoInventoryFromHotels = (pkg) => {
+      const byCity = {}
+      let blockRooms = 0
       ;(pkg.hotels || []).forEach((cat) => {
         ;(cat.rows || []).forEach((row) => {
           const city = String(row.city || '').trim()
-          const property = String(row.options || '').split('/')[0].trim()
-          if (!city || !property) return
-          const key = `hotel|${city.toLowerCase()}|${property.toLowerCase()}`
-          const dup = state.inventory.some((i) => i.type === 'hotel' &&
-            `hotel|${String(i.departureCity || '').toLowerCase()}|${String(i.airline || '').toLowerCase()}` === key)
-          if (dup || autoInvKeys.has(key)) return
-          autoInvKeys.add(key)
-          const rnd = Math.floor(1000 + Math.random() * 9000)
-          addInventory({
-            type: 'hotel',
-            inventoryId: `HT-${(city.replace(/[^A-Za-z]/g, '').slice(0, 3) || 'CTY').toUpperCase()}-${rnd}`,
-            airline: property, // hotel-name slot
-            departureCity: city, arrivalCity: property,
-            sector: `${city} · stay`,
-            flightNo: cat.category ? `${cat.category} Room` : 'Room', // room-type slot
-            category: cat.category || '',
-            totalSeats: 0,
-            status: 'Active',
-            packageId: pkg.id,
-            remarks: 'Auto-created from package hotels.',
-          })
+          if (!city) return
+          const k = city.toLowerCase()
+          if (!byCity[k]) byCity[k] = { city, rooms: 0, hotels: [], categories: [] }
+          const rooms = Math.max(0, Number(row.rooms) || 0)
+          if (rooms > byCity[k].rooms) byCity[k].rooms = rooms
+          if (rooms > blockRooms) blockRooms = rooms // one block for the group
+          if (row.options) byCity[k].hotels.push(String(row.options).trim())
+          if (cat.category && !byCity[k].categories.includes(cat.category)) byCity[k].categories.push(cat.category)
         })
       })
+      const cities = Object.values(byCity)
+      if (!cities.length) return
+      const dest = pkg.destinationCity || 'Destination'
+      const existing = state.inventory.find((i) => i.type === 'hotel' && i.packageId === pkg.id)
+      const values = {
+        type: 'hotel',
+        inventoryId: existing?.inventoryId || `HT-${(dest.replace(/[^A-Za-z]/g, '').slice(0, 3) || 'DST').toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        airline: dest, // block name = destination
+        departureCity: dest,
+        arrivalCity: cities.map((c) => c.city).join(', '),
+        destinationCity: pkg.destinationCity || '',
+        cities, // nested per-city detail
+        sector: `${dest} · stay`,
+        flightNo: `${cities.length} ${cities.length === 1 ? 'city' : 'cities'}`,
+        totalSeats: blockRooms,
+        status: 'Active',
+        packageId: pkg.id,
+        remarks: 'Auto-created from package hotels.',
+      }
+      if (existing) { updateInventory(existing.id, values); return }
+      const key = `hotel|pkg|${pkg.id}`
+      if (autoInvKeys.has(key)) return
+      autoInvKeys.add(key)
+      addInventory(values)
     }
 
     // --- action creators: update UI immediately + write through to backend
@@ -498,7 +524,7 @@ export function AppProvider({ children }) {
         paymentNote: '',
         seats,
         agent,
-        history: [{ status: 'Processing', note: 'Booking created', by: agent, at: today() }],
+        history: [{ status: 'Processing', note: 'Booking created', by: agent, at: stamp() }],
         ...booking,
       }
       dispatch({ type: 'ADD_BOOKING', booking: full })
@@ -667,13 +693,22 @@ export function AppProvider({ children }) {
       patch.paymentLog = [...(inv.paymentLog || []), entry]
       updateInventory(id, patch)
     }
-    const releaseSeats = (id, n) => {
+    const releaseSeats = (id, n, note = '') => {
       const inv = state.inventory.find((i) => i.id === id)
       if (!inv) return
       const rel = Math.max(0, Math.min(n, inv.totalSeats - inv.allocatedSeats - (inv.releasedSeats || 0)))
+      if (rel <= 0) return
+      const unit = (inv.type || 'airline') === 'hotel' ? 'room' : 'seat'
+      const by = state.user ? `${state.user.name} (${roleLabel(state.user.role)})` : 'System'
       // Releasing seats is an allocation action, not a status change — the record
-      // stays Active (its allocation label auto-updates to "Released").
-      updateInventory(id, { releasedSeats: (inv.releasedSeats || 0) + rel })
+      // stays Active (its allocation label auto-updates to "Released"). Logged.
+      updateInventory(id, {
+        releasedSeats: (inv.releasedSeats || 0) + rel,
+        history: [
+          ...(inv.history || []),
+          { action: 'release', note: (`Released ${rel} ${unit}${rel > 1 ? 's' : ''} back to ${(inv.type || 'airline') === 'hotel' ? 'hotel' : 'airline'}` + (note ? ` — ${note.trim()}` : '')), qty: rel, by, at: stamp() },
+        ],
+      })
     }
     const setInventoryStatus = (id, status) => updateInventory(id, { status })
 
@@ -702,7 +737,7 @@ export function AppProvider({ children }) {
     const setBookingStatus = (bookingId, status, paymentNote, proof, extra) => {
       const b = state.bookings.find((x) => x.id === bookingId)
       const by = state.user ? `${state.user.name} (${roleLabel(state.user.role)})` : 'System'
-      const at = today()
+      const at = stamp()
       // Keep only serializable proof metadata (a raw File can't be stored as JSON).
       const proofMeta = proof && proof.name ? { name: proof.name, size: proof.size || 0, type: proof.type || '' } : proof
       dispatch({ type: 'SET_BOOKING_STATUS', bookingId, status, paymentNote, proof: proofMeta, cancellation: extra?.cancellation, by, at })
@@ -750,12 +785,12 @@ export function AppProvider({ children }) {
       )
     }
     // Finance/ops marks a due refund as paid out.
-    const markRefunded = (bookingId, note) => {
+    const markRefunded = (bookingId, note, proof = null) => {
       const b = state.bookings.find((x) => x.id === bookingId)
       const by = state.user ? `${state.user.name} (${roleLabel(state.user.role)})` : 'System'
-      const at = today()
-      dispatch({ type: 'MARK_REFUNDED', bookingId, note: note || '', by, at })
-      if (b) apiUpsertBooking(withRefunded(b, { by, at, note: note || '' }))
+      const at = stamp()
+      dispatch({ type: 'MARK_REFUNDED', bookingId, note: note || '', by, at, proof })
+      if (b) apiUpsertBooking(withRefunded(b, { by, at, note: note || '', proof }))
     }
 
     // Capture / update the traveller name list + details for a booking (e.g. to
@@ -764,7 +799,7 @@ export function AppProvider({ children }) {
       const b = state.bookings.find((x) => x.id === bookingId)
       const names = details.map((d) => `${d.firstName || ''} ${d.lastName || ''}`.trim()).filter(Boolean)
       const by = state.user ? `${state.user.name} (${roleLabel(state.user.role)})` : 'System'
-      const at = today()
+      const at = stamp()
       dispatch({ type: 'SET_BOOKING_TRAVELLERS', bookingId, details, names, by, at })
       if (b) {
         apiUpsertBooking(withTravellers(b, { details, names, by, at }))
@@ -780,7 +815,7 @@ export function AppProvider({ children }) {
     const approveBookingPayment = (bookingId) => {
       const b = state.bookings.find((x) => x.id === bookingId)
       const by = state.user ? `${state.user.name} (${roleLabel(state.user.role)})` : 'System'
-      const at = today()
+      const at = stamp()
       dispatch({ type: 'APPROVE_BOOKING_PAYMENT', bookingId, by, at })
       if (b) apiUpsertBooking(withApproved(b, { by, at }))
     }

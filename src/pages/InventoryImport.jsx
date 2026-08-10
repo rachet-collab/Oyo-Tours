@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx'
 import Icon from '../components/ui/Icon.jsx'
 import { Button, Modal, Pill, Select, Textarea } from '../components/ui/primitives.jsx'
 import { useApp } from '../store/AppStore.jsx'
-import { INVENTORY_STATUSES, buildManifest } from '../store/data.js'
+import { INVENTORY_STATUSES } from '../store/data.js'
 import { inr } from '../lib/format.js'
 import { airlineFromFlightNo } from '../lib/airlines.js'
 
@@ -24,28 +24,18 @@ const COLUMNS = {
     { key: 'packageRef', label: 'Package' },
     { key: 'remarks', label: 'Remarks' },
   ],
+  // New hotel model: a destination made of cities; hotels listed per category;
+  // one room total per city. One row per city + category.
   hotel: [
-    { key: 'airline', label: 'Hotel', req: true },
-    { key: 'flightNo', label: 'Room Type' },
-    { key: 'departureCity', label: 'City', req: true },
-    { key: 'arrivalCity', label: 'Property', req: true },
+    { key: 'destinationCity', label: 'Destination City', req: true, hint: 'e.g. Andaman' },
+    { key: 'departureCity', label: 'City', req: true, hint: 'e.g. Port Blair' },
+    { key: 'category', label: 'Category', req: true, hint: 'Deluxe / Super Deluxe / Standard' },
+    { key: 'arrivalCity', label: 'Hotels', req: true, hint: 'Hotel A / Hotel B / similar' },
+    { key: 'totalSeats', label: 'Total Rooms', num: true, req: true },
     { key: 'departureDate', label: 'Check-in', date: true, req: true },
     { key: 'returnDate', label: 'Check-out', date: true },
-    { key: 'nights', label: 'Nights', num: true },
-    { key: 'totalSeats', label: 'Total Rooms', num: true, req: true },
-    { key: 'seatCost', label: 'Room Cost', num: true },
-    { key: 'allocatedSeats', label: 'Allocated Rooms', num: true },
-    { key: 'namesCaptured', label: 'Names Captured', num: true },
-    { key: 'releasedSeats', label: 'Released Rooms', num: true },
-    { key: 'advancePaid', label: 'Advance Paid', bool: true },
-    { key: 'advanceDate', label: 'Advance Date', date: true },
-    { key: 'balancePaid', label: 'Balance Paid', bool: true },
-    { key: 'balanceDate', label: 'Balance Date', date: true },
-    { key: 'status', label: 'Status' },
     { key: 'packageRef', label: 'Package' },
-    { key: 'namingDeadline', label: 'Rooming Deadline', date: true },
-    { key: 'releaseDeadline', label: 'Release Deadline', date: true },
-    { key: 'balanceDueDate', label: 'Balance Due Date', date: true },
+    { key: 'status', label: 'Status' },
     { key: 'remarks', label: 'Remarks' },
   ],
 }
@@ -53,14 +43,17 @@ const COLUMNS = {
 // Accepted header aliases → record key (all normalised: lowercase, alnum only).
 const ALIASES = {
   inventoryid: 'inventoryId', id: 'inventoryId',
-  airline: 'airline', hotel: 'airline', provider: 'airline', supplier: 'airline', vendor: 'airline',
+  airline: 'airline', provider: 'airline', supplier: 'airline', vendor: 'airline',
   flightno: 'flightNo', flight: 'flightNo', flightdetails: 'flightNo', roomtype: 'flightNo', room: 'flightNo', ref: 'flightNo',
   sector: 'sector', route: 'sector', outboundsector: 'sector',
   returnsector: 'returnSector',
   returnflightno: 'returnFlightNo', returnflight: 'returnFlightNo', returnflightdetails: 'returnFlightNo',
   returndeparturedate: 'returnDate', returndeparture: 'returnDate',
-  from: 'departureCity', fromcity: 'departureCity', origin: 'departureCity', city: 'departureCity', departurecity: 'departureCity',
-  to: 'arrivalCity', tocity: 'arrivalCity', destination: 'arrivalCity', property: 'arrivalCity', arrivalcity: 'arrivalCity', hotelname: 'arrivalCity',
+  // Hotel destination + category + hotel-options
+  destinationcity: 'destinationCity', destination: 'destinationCity', dest: 'destinationCity',
+  category: 'category', tier: 'category', hotelcategory: 'category', roomcategory: 'category',
+  from: 'departureCity', fromcity: 'departureCity', origin: 'departureCity', city: 'departureCity', staycity: 'departureCity', departurecity: 'departureCity',
+  to: 'arrivalCity', tocity: 'arrivalCity', property: 'arrivalCity', properties: 'arrivalCity', arrivalcity: 'arrivalCity', hotelname: 'arrivalCity', hotel: 'arrivalCity', hotels: 'arrivalCity', options: 'arrivalCity', hoteloptions: 'arrivalCity',
   departuredate: 'departureDate', departure: 'departureDate', checkin: 'departureDate', checkindate: 'departureDate', date: 'departureDate', traveldate: 'departureDate',
   returndate: 'returnDate', return: 'returnDate', checkout: 'returnDate', checkoutdate: 'returnDate',
   nights: 'nights',
@@ -264,28 +257,21 @@ export default function InventoryImport({ type = 'airline', open, onClose, asPag
       }
       if (type === 'hotel') {
         const from = rec.departureCity
-        const to = rec.arrivalCity
+        const options = rec.arrivalCity // hotel options string, e.g. "Hotel A / Hotel B / similar"
+        const property = String(options || '').split('/')[0].trim() || from
         const inventoryId = `HT-${cityCode(from)}-${rid()}`
-        const namesCaptured = Math.max(0, rec.namesCaptured || 0)
-        const hasOverride = !!(rec.namingDeadline || rec.releaseDeadline || rec.balanceDueDate)
         addInventory({
           type: 'hotel', inventoryId,
-          airline: rec.airline, flightNo: rec.flightNo,
-          departureCity: from, arrivalCity: to, sector: from,
+          airline: property, flightNo: 'Room',
+          departureCity: from, arrivalCity: options || property,
+          destinationCity: rec.destinationCity || '',
+          category: rec.category || '',
+          sector: `${from} · stay`,
           departureDate: rec.departureDate, returnDate: rec.returnDate || rec.departureDate,
-          nights: Math.max(0, rec.nights || 0),
           totalSeats: Math.max(0, rec.totalSeats || 0),
-          seatCost: Math.max(0, rec.seatCost || 0),
-          allocatedSeats: Math.max(0, rec.allocatedSeats || 0),
-          releasedSeats: Math.max(0, rec.releasedSeats || 0),
-          namesCaptured, manifest: buildManifest(namesCaptured, inventoryId),
-          advancePaid: !!rec.advancePaid, advanceDate: rec.advancePaid ? (rec.advanceDate || '') : '',
-          balancePaid: !!rec.balancePaid, balanceDate: rec.balancePaid ? (rec.balanceDate || '') : '',
           status: INVENTORY_STATUSES.includes(rowStatus) ? rowStatus : 'Active',
           vendors: vlist,
           packageId: pkgId, remarks: rec.remarks || 'Bulk uploaded',
-          deadlineOverride: hasOverride,
-          namingDeadline: rec.namingDeadline || '', releaseDeadline: rec.releaseDeadline || '', balanceDueDate: rec.balanceDueDate || '',
         })
       } else {
         // Flights: derive from/to from the Sector and the carrier from the flight no.
@@ -309,20 +295,64 @@ export default function InventoryImport({ type = 'airline', open, onClose, asPag
       }
       return true
   }
+  // Group hotel rows into ONE block per destination + package (cities nested).
+  const buildHotelBlocks = (list) => {
+    const groups = {}
+    list.forEach((r) => {
+      const rec = r.rec
+      const cfg = cfgFor(r)
+      const dest = String(rec.destinationCity || '').trim() || 'Destination'
+      const gk = `${dest.toLowerCase()}|${r.pkgId || ''}`
+      if (!groups[gk]) groups[gk] = { dest, pkgId: r.pkgId, status: cfg.status || rec.status, vendor: cfg.vendor, rooms: 0, byCity: {}, departureDate: '', returnDate: '', remarks: '' }
+      const g = groups[gk]
+      const city = String(rec.departureCity || '').trim()
+      if (city) {
+        const ck = city.toLowerCase()
+        if (!g.byCity[ck]) g.byCity[ck] = { city, categories: [], hotels: [] }
+        if (rec.arrivalCity) g.byCity[ck].hotels.push(String(rec.arrivalCity).trim())
+        if (rec.category && !g.byCity[ck].categories.includes(rec.category)) g.byCity[ck].categories.push(rec.category)
+      }
+      const rm = Math.max(0, rec.totalSeats || 0)
+      if (rm > g.rooms) g.rooms = rm
+      if (rec.departureDate && !g.departureDate) g.departureDate = rec.departureDate
+      if (rec.returnDate && !g.returnDate) g.returnDate = rec.returnDate
+      if (rec.remarks && !g.remarks) g.remarks = rec.remarks
+    })
+    return Object.values(groups).map((g) => {
+      const cities = Object.values(g.byCity).map((c) => ({ city: c.city, categories: c.categories, hotels: c.hotels, rooms: g.rooms }))
+      return {
+        type: 'hotel',
+        inventoryId: `HT-${cityCode(g.dest)}-${rid()}`,
+        airline: g.dest, departureCity: g.dest, arrivalCity: cities.map((c) => c.city).join(', '),
+        destinationCity: g.dest, cities,
+        sector: `${g.dest} · stay`, flightNo: `${cities.length} ${cities.length === 1 ? 'city' : 'cities'}`,
+        departureDate: g.departureDate, returnDate: g.returnDate || g.departureDate,
+        totalSeats: g.rooms, status: INVENTORY_STATUSES.includes(g.status) ? g.status : 'Active',
+        vendors: g.vendor ? [g.vendor] : [],
+        packageId: g.pkgId, remarks: g.remarks || 'Bulk uploaded',
+      }
+    })
+  }
+
   // Chunked import so the user sees a live progress bar + a final summary.
   const runImport = () => {
     const list = valid
     if (!list.length) return
     setDone(null)
-    setProgress({ done: 0, total: list.length })
+    // Hotels: collapse the rows into destination blocks first, then create those.
+    const units = type === 'hotel' ? buildHotelBlocks(list) : list
+    setProgress({ done: 0, total: units.length })
     let idx = 0
     let n = 0
     const step = () => {
-      const end = Math.min(idx + 3, list.length)
-      for (; idx < end; idx += 1) if (importRow(list[idx])) n += 1
-      setProgress({ done: idx, total: list.length })
-      if (idx < list.length) { setTimeout(step, 45); return }
-      setDone({ imported: n, skipped: list.length - n })
+      const end = Math.min(idx + 3, units.length)
+      for (; idx < end; idx += 1) {
+        if (type === 'hotel') { addInventory(units[idx]); n += 1 }
+        else if (importRow(units[idx])) n += 1
+      }
+      setProgress({ done: idx, total: units.length })
+      if (idx < units.length) { setTimeout(step, 45); return }
+      setDone({ imported: n, skipped: type === 'hotel' ? (parsed.length - list.length) : (list.length - n) })
       setProgress(null); setRows2d([]); setText(''); setFileName('')
     }
     setTimeout(step, 45)
@@ -335,7 +365,8 @@ export default function InventoryImport({ type = 'airline', open, onClose, asPag
       ['', 'BOM-BKK', '6E 1407', '2026-11-18', 'BKK-BOM', '6E 1408', '2026-11-23', 30, 'Active', '', ''],
     ],
     hotel: [
-      ['HT-DXB-1301', 'Atlantis The Palm', 'Deluxe Room', 'Dubai', 'Atlantis The Palm', '2026-12-05', '2026-12-09', 4, 18, 42000, 0, 0, 0, 'yes', '2026-09-20', 'no', '', 'Active', '', '', '', '', 'Sea-view block'],
+      ['Andaman', 'Port Blair', 'Deluxe', 'Blue Mmerlin / J Hotel / similar', 50, '2026-12-05', '2026-12-07', 'PKG-1002', 'Active', ''],
+      ['Andaman', 'Havelock', 'Super Deluxe', 'Sands Marina / Symphony Palms / similar', 50, '2026-12-07', '2026-12-09', 'PKG-1002', 'Active', ''],
     ],
   }
 
@@ -448,8 +479,8 @@ export default function InventoryImport({ type = 'airline', open, onClose, asPag
               <table className="w-full min-w-[880px] text-xs">
                 <thead className="sticky top-0 bg-muted/60 text-left text-[10px] uppercase tracking-wide text-muted-foreground">
                   <tr>
-                    <th className="px-3 py-2">{type === 'hotel' ? 'Hotel' : 'Airline'}</th>
-                    <th className="px-3 py-2">{type === 'hotel' ? 'City → Property' : 'Route'}</th>
+                    <th className="px-3 py-2">{type === 'hotel' ? 'Hotels' : 'Airline'}</th>
+                    <th className="px-3 py-2">{type === 'hotel' ? 'Destination · City · Category' : 'Route'}</th>
                     <th className="px-3 py-2">{type === 'hotel' ? 'Check-in' : 'Departure'}</th>
                     <th className="px-3 py-2 text-right">{type === 'hotel' ? 'Rooms' : 'Seats'}</th>
                     <th className="px-3 py-2">Vendor</th>
@@ -460,11 +491,13 @@ export default function InventoryImport({ type = 'airline', open, onClose, asPag
                 <tbody>
                   {parsed.map((r, i) => {
                     const cfg = cfgFor(r)
-                    const airlineName = type === 'hotel' ? r.rec.airline : (airlineFromFlightNo(r.rec.flightNo) || r.rec.airline || '—')
-                    const route = type === 'hotel' ? `${r.rec.departureCity} → ${r.rec.arrivalCity}` : (r.rec.sector || '—')
+                    const airlineName = type === 'hotel' ? (r.rec.arrivalCity || '—') : (airlineFromFlightNo(r.rec.flightNo) || r.rec.airline || '—')
+                    const route = type === 'hotel'
+                      ? [r.rec.destinationCity, r.rec.departureCity, r.rec.category].filter(Boolean).join(' · ')
+                      : (r.rec.sector || '—')
                     return (
                       <tr key={i} className="border-t align-top">
-                        <td className="px-3 py-2 font-medium">{airlineName}<div className="text-[10px] text-muted-foreground">{r.rec.flightNo}</div></td>
+                        <td className="px-3 py-2 font-medium">{airlineName}<div className="text-[10px] text-muted-foreground">{type === 'hotel' ? '' : r.rec.flightNo}</div></td>
                         <td className="px-3 py-2 text-muted-foreground">{route}</td>
                         <td className="px-3 py-2">{r.rec.departureDate || '—'}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{r.rec.totalSeats || '—'}</td>

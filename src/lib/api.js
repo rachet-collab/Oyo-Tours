@@ -75,11 +75,16 @@ const bookingFromDb = (r) => {
     refundAmount: r.refund_amount != null ? Number(r.refund_amount) : 0,
     refundStatus: r.refund_status || 'none', appliedRule: r.applied_rule || '',
     refundedBy: r.refunded_by || '', refundedAt: r.refunded_at || '', refundNote: r.refund_note || '',
+    refundProof: r.refund_proof || null,
   } : undefined
+  // An approved payment always means the booking is Confirmed — repair any legacy
+  // record that was left in Processing after its payment was approved.
+  const baseStatus = normalizeStatus(r.status)
+  const status = (r.payment_approved && baseStatus !== 'Cancelled') ? 'Confirmed' : baseStatus
   return {
     id: r.id, ref: r.ref, guestId: r.guest_id, packageId: r.package_id,
     departureId: r.departure_id, category: r.category, pax: r.pax || {},
-    seats: r.seats, amount: Number(r.amount), status: normalizeStatus(r.status),
+    seats: r.seats, amount: Number(r.amount), status,
     agent: r.agent, paymentNote: r.payment_note, createdAt: d10(r.created_at),
     advanceAmount: r.advance_amount != null ? Number(r.advance_amount) : 0,
     advancePaid: !!r.advance_paid,
@@ -106,6 +111,7 @@ const bookingToDb = (b) => {
     cancel_amount_paid: c.amountPaid ?? null, refund_amount: c.refundAmount ?? null,
     refund_status: c.refundStatus || null, applied_rule: c.appliedRule || null,
     refunded_by: c.refundedBy || null, refunded_at: c.refundedAt || null, refund_note: c.refundNote || null,
+    refund_proof: c.refundProof || null,
     traveller_details: b.travellerDetails || [], travellers: b.travellers || [],
     add_ons: b.addOns || [], rooms: b.rooms || [], hotel_preferences: b.hotelPreferences || [],
     history: b.history || [], payment_proof: b.paymentProof || null,

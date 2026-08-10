@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import TopBar from '../components/layout/TopBar.jsx'
 import Icon from '../components/ui/Icon.jsx'
-import { Button, Card, Eyebrow, Modal, Pill, SeatMeter } from '../components/ui/primitives.jsx'
+import { Button, Card, Eyebrow, Input, Modal, Pill, SeatMeter } from '../components/ui/primitives.jsx'
 import InventoryImage from '../components/InventoryImage.jsx'
 import { useApp } from '../store/AppStore.jsx'
 import { INV_STATUS_TONE, INVENTORY_LABELS, OCCUPANCY } from '../store/data.js'
 import { inr, shortDate } from '../lib/format.js'
+import { blockCities, hotelOptionsForCity, travellersForBlock, downloadRooming } from '../lib/rooming.js'
 
 const cx = (...c) => c.filter(Boolean).join(' ')
 const cityCode = (s = '') => (String(s).match(/\(([A-Za-z]{3})\)/)?.[1] || String(s).replace(/[^A-Za-z]/g, '').slice(0, 3)).toUpperCase()
@@ -45,9 +46,62 @@ function DeadlineRow({ icon, label, date, days }) {
 export default function InventoryDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { inventoryById, packageById, releaseSeats } = useApp()
+  const { inventoryById, packageById, releaseSeats, bookings, setBookingTravellers } = useApp()
   const inv = inventoryById(id)
   const [person, setPerson] = useState(null)
+  // Release-inventory modal (quantity + optional note; the action is logged).
+  const [relOpen, setRelOpen] = useState(false)
+  const [relQty, setRelQty] = useState('')
+  const [relNote, setRelNote] = useState('')
+  // Rooming edits are held as a local draft so the user gets an explicit Save
+  // (with feedback) rather than a silent per-keystroke write.
+  const SEP = '␟'
+  const [roomDraft, setRoomDraft] = useState({})
+  const [roomSaved, setRoomSaved] = useState(false)
+
+  // Assign a hotel (for one city) to one traveller, persisting via the booking.
+  const assignHotel = (bookingId, idx, city, val) => {
+    const b = bookings.find((x) => x.id === bookingId)
+    if (!b) return
+    const details = (b.travellerDetails || []).map((t, i) =>
+      (i === idx ? { ...t, hotelByCity: { ...(t.hotelByCity || {}), [city]: val } } : t))
+    setBookingTravellers(bookingId, details)
+  }
+
+  const roomKey = (bookingId, idx, city) => `${bookingId}${SEP}${idx}${SEP}${city}`
+  const roomVal = (r, city) => {
+    const k = roomKey(r.bookingId, r.idx, city)
+    return roomDraft[k] !== undefined ? roomDraft[k] : (r.hotelByCity[city] || '')
+  }
+  const editRoom = (r, city, val) => {
+    setRoomDraft((d) => ({ ...d, [roomKey(r.bookingId, r.idx, city)]: val }))
+    setRoomSaved(false)
+  }
+  const roomDirty = Object.keys(roomDraft).length > 0
+  // Save all rooming edits — grouped per booking so multiple city changes for the
+  // same traveller are applied together (not clobbered by successive writes).
+  const saveRooming = () => {
+    const byBooking = {}
+    Object.entries(roomDraft).forEach(([k, v]) => {
+      const [bid, idxS, city] = k.split(SEP)
+      ;(byBooking[bid] ||= []).push({ idx: Number(idxS), city, val: v })
+    })
+    Object.entries(byBooking).forEach(([bid, changes]) => {
+      const b = bookings.find((x) => x.id === bid)
+      if (!b) return
+      const details = (b.travellerDetails || []).map((t, i) => {
+        const forI = changes.filter((c) => c.idx === i)
+        if (!forI.length) return t
+        const hotelByCity = { ...(t.hotelByCity || {}) }
+        forI.forEach((c) => { hotelByCity[c.city] = c.val })
+        return { ...t, hotelByCity }
+      })
+      setBookingTravellers(bid, details)
+    })
+    setRoomDraft({})
+    setRoomSaved(true)
+    setTimeout(() => setRoomSaved(false), 2500)
+  }
 
   const L = INVENTORY_LABELS[inv?.type || 'airline']
 
@@ -78,13 +132,46 @@ export default function InventoryDetail() {
           </span>
         }
         subtitle={`${inv.airline} · ${inv.sector}`}
-        actions={<Button variant="outline" icon="edit" onClick={() => navigate(`${L.route}/${inv.id}/edit`)}>Edit</Button>}
       />
 
-      <div className="grid gap-6 px-4 py-5 sm:px-6 lg:grid-cols-3 lg:px-8 lg:py-6">
+      {/* Release inventory — quantity + note; logged to the block's history */}
+      <Modal
+        open={relOpen}
+        onClose={() => setRelOpen(false)}
+        title={`Release ${L.unit}s`}
+        subtitle={`Return unsold ${L.unit}s back to the ${isHotel ? 'hotel' : 'airline'}. This is logged.`}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setRelOpen(false)}>Cancel</Button>
+            <Button
+              icon="check"
+              disabled={!(Number(relQty) > 0) || Number(relQty) > inv.available}
+              onClick={() => { releaseSeats(inv.id, Number(relQty), relNote); setRelOpen(false) }}
+            >
+              Release {Number(relQty) > 0 ? Number(relQty) : ''} {L.unit}{Number(relQty) === 1 ? '' : 's'}
+            </Button>
+          </>
+        }
+      >
+        <div className="grid gap-3">
+          <p className="text-sm text-muted-foreground">
+            {inv.available} {L.unit}{inv.available === 1 ? '' : 's'} available to release. Releasing everything closes the block (marks it Inactive).
+          </p>
+          <div className="max-w-[200px]">
+            <Eyebrow className="mb-1">Quantity</Eyebrow>
+            <Input type="number" min="1" max={inv.available} value={relQty} onChange={(e) => setRelQty(e.target.value)} />
+          </div>
+          <div>
+            <Eyebrow className="mb-1">Reason / note (optional)</Eyebrow>
+            <Input value={relNote} onChange={(e) => setRelNote(e.target.value)} placeholder="e.g. Released to airline ahead of deadline" />
+          </div>
+        </div>
+      </Modal>
+
+      <div className="grid gap-6 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
         {/* Release decision — surfaced at the very top so it can't be missed */}
         {showRelease && (
-          <Card className="border-status-urgent/30 bg-status-urgent-bg/40 p-5 lg:col-span-3">
+          <Card className="border-status-urgent/30 bg-status-urgent-bg/40 p-5">
             <div className="flex flex-wrap items-start gap-3">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-status-urgent-bg text-status-urgent"><Icon name="clock" size={18} /></span>
               <div className="min-w-0 flex-1">
@@ -98,7 +185,8 @@ export default function InventoryDetail() {
             </div>
           </Card>
         )}
-        <div className="grid gap-6 lg:col-span-2">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+        <div className="grid min-w-0 flex-1 gap-6">
           {inv.isPast && (
             <Card className="flex items-center gap-3 border-muted-foreground/20 bg-muted/40 p-4">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground"><Icon name="check" size={18} /></span>
@@ -124,11 +212,11 @@ export default function InventoryDetail() {
           )}
           {/* Property / route header */}
           <Card className="overflow-hidden">
-            {isHotel ? (
-              /* Hotels lead with a full-bleed property photo that fills the frame */
+            {isHotel && (inv.imageUrl || pkg?.coverUrl) ? (
+              /* Hotels with a photo lead with a full-bleed property image */
               <div className="relative h-64 w-full sm:h-80">
-                {inv.imageUrl ? (
-                  <img src={inv.imageUrl} alt={inv.airline} className="absolute inset-0 h-full w-full object-cover" />
+                {(inv.imageUrl || pkg?.coverUrl) ? (
+                  <img src={inv.imageUrl || pkg.coverUrl} alt={inv.airline} className="absolute inset-0 h-full w-full object-cover" />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center bg-secondary text-muted-foreground"><Icon name="building" size={48} /></div>
                 )}
@@ -194,6 +282,96 @@ export default function InventoryDetail() {
             </div>
           </Card>
 
+          {/* Cities in this block — rooms per city + category bifurcation */}
+          {isHotel && Array.isArray(inv.cities) && inv.cities.length > 0 && (
+            <Card className="p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <Eyebrow>Rooms per city</Eyebrow>
+                <span className="text-xs font-semibold text-muted-foreground">{inv.cities.length} {inv.cities.length === 1 ? 'city' : 'cities'} · one {inv.totalSeats}-room block per city</span>
+              </div>
+              <div className="grid gap-3">
+                {inv.cities.map((c, i) => (
+                  <div key={i} className="rounded-xl border p-4">
+                    {/* Part 1 — the city + its room total */}
+                    <div className="mb-3 flex items-center gap-2.5">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-primary"><Icon name="mapPin" size={15} /></span>
+                      <span className="text-sm font-bold">{c.city}</span>
+                      <span className="ml-auto rounded-lg bg-muted px-2.5 py-1 text-sm font-bold tabular-nums">{c.rooms ?? inv.totalSeats} <span className="text-xs font-medium text-muted-foreground">rooms</span></span>
+                    </div>
+                    {/* Part 2 — bifurcation by category */}
+                    <div className="grid gap-2 border-t pt-3">
+                      {(c.categories || []).map((cat, k) => (
+                        <div key={cat} className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-3">
+                          <span className="sm:w-32 shrink-0">
+                            <Pill tone={cat === 'Super Deluxe' ? 'proposal' : 'neutral'}>{cat}</Pill>
+                          </span>
+                          <span className="text-sm text-muted-foreground">{(c.hotels && c.hotels[k]) || '—'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* Rooming — assign a hotel per city to each traveller + Excel export */}
+          {isHotel && blockCities(inv).length > 0 && (
+            <Card className="p-5">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Eyebrow>Rooming — hotel per traveller</Eyebrow>
+                  {roomDirty && <span className="rounded-full bg-status-proposal-bg px-2 py-0.5 text-[11px] font-semibold text-status-proposal">Unsaved changes</span>}
+                  {roomSaved && <span className="inline-flex items-center gap-1 rounded-full bg-status-won-bg px-2 py-0.5 text-[11px] font-semibold text-status-won"><Icon name="check" size={11} /> Saved</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" icon="check" disabled={!roomDirty} onClick={saveRooming}>Save rooming</Button>
+                  <Button size="sm" variant="outline" icon="download" onClick={() => downloadRooming(inv, bookings)}>Export Excel</Button>
+                </div>
+              </div>
+              {travellersForBlock(bookings, inv).length === 0 ? (
+                <p className="rounded-xl border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
+                  No travellers yet. Once names are captured against bookings for this package, assign each a hotel per city here.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[640px] text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/60 text-left text-[13px] font-semibold text-muted-foreground">
+                        <th className="px-3 py-2">Traveller</th>
+                        <th className="px-3 py-2">Booking</th>
+                        {blockCities(inv).map((c) => <th key={c} className="px-3 py-2">{c}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {travellersForBlock(bookings, inv).map((r) => (
+                        <tr key={`${r.bookingId}-${r.idx}`} className="border-t align-middle">
+                          <td className="px-3 py-2">
+                            <p className="font-medium">{r.name}</p>
+                            {r.category && <p className="text-xs text-muted-foreground">{r.category}</p>}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{r.ref}</td>
+                          {blockCities(inv).map((city) => {
+                            const opts = hotelOptionsForCity(inv, city, r.category)
+                            const listId = `h-${r.bookingId}-${r.idx}-${city.replace(/\W/g, '')}`
+                            return (
+                              <td key={city} className="px-3 py-2">
+                                <Input value={roomVal(r, city)} placeholder="Type hotel" list={listId}
+                                  onChange={(e) => editRoom(r, city, e.target.value)}
+                                  className="h-9 min-w-[180px] text-xs" />
+                                <datalist id={listId}>{opts.map((o) => <option key={o} value={o} />)}</datalist>
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          )}
+
           {/* Allocation */}
           <Card className="p-5">
             <div className="mb-3 flex items-center justify-between">
@@ -207,6 +385,22 @@ export default function InventoryDetail() {
               <Kpi label="Available" value={inv.available} tone={inv.available > 0 ? 'text-status-won' : ''} />
               <Kpi label="Released" value={inv.releasedSeats || 0} tone={inv.releasedSeats ? 'text-status-urgent' : ''} />
             </div>
+            {(inv.history || []).some((h) => h.action === 'release') && (
+              <div className="mt-4 border-t pt-4">
+                <Eyebrow className="mb-2">Release log</Eyebrow>
+                <div className="grid gap-1.5">
+                  {(inv.history || []).filter((h) => h.action === 'release').slice().reverse().map((h, i) => (
+                    <div key={i} className="flex items-start gap-2.5 rounded-lg border px-3 py-2 text-sm">
+                      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-status-urgent-bg text-status-urgent"><Icon name="seat" size={13} /></span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block">{h.note}</span>
+                        <span className="block text-xs text-muted-foreground">{h.by}{h.at ? ` · ${shortDate(String(h.at).slice(0, 10))}` : ''}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </Card>
 
           {/* Naming progress + manifest — one block */}
@@ -269,9 +463,24 @@ export default function InventoryDetail() {
 
         </div>
 
-        {/* Vendors + notes */}
-        <aside className="lg:col-span-1">
+        {/* Actions + vendors + notes */}
+        <aside className="w-full min-w-0 lg:w-[340px] lg:shrink-0">
           <div className="grid gap-6 lg:sticky lg:top-24">
+            {/* Actions */}
+            <Card className="p-4">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button
+                  variant="outline"
+                  icon="seat"
+                  disabled={inv.available <= 0}
+                  onClick={() => { setRelQty(String(inv.available)); setRelNote(''); setRelOpen(true) }}
+                >
+                  Release {L.unit}s
+                </Button>
+                <Button variant="outline" icon="edit" onClick={() => navigate(`${L.route}/${inv.id}/edit`)}>Edit</Button>
+              </div>
+            </Card>
+
             <Card className="p-5">
               <div className="mb-3 flex items-center justify-between">
                 <Eyebrow>Vendors</Eyebrow>
@@ -302,6 +511,7 @@ export default function InventoryDetail() {
             </Card>
           </div>
         </aside>
+        </div>
       </div>
 
       <GuestProfileModal person={person} type={inv.type} onClose={() => setPerson(null)} onBooking={(bid) => { setPerson(null); navigate(`/bookings/${bid}`) }} />

@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import TopBar from '../components/layout/TopBar.jsx'
 import Icon from '../components/ui/Icon.jsx'
-import { Button, Card, Eyebrow, Field, Input, Select, Textarea } from '../components/ui/primitives.jsx'
+import { Button, Card, Eyebrow, Field, Input, Pill, Select, Textarea } from '../components/ui/primitives.jsx'
 import InventoryImage from '../components/InventoryImage.jsx'
 import { useApp } from '../store/AppStore.jsx'
 import { INVENTORY_STATUSES, INVENTORY_LABELS, deriveDeadlines } from '../store/data.js'
@@ -95,14 +95,93 @@ export default function InventoryForm({ type: typeProp = 'airline' }) {
   )
   const setOv = (k) => (e) => setOvr((o) => ({ ...o, [k]: e.target.value }))
 
+  // --- Hotel-only state: destination + per-category city/hotel rows -----------
+  // A hotel "block" spans a destination made of several cities. Hotels are
+  // listed per category; the categories are always the fixed three tiers, and
+  // rooms are ONE total per city (the inventory quantity).
+  const HOTEL_CATEGORIES = ['Deluxe', 'Super Deluxe', 'Standard']
+  const [destinationCity, setDestinationCity] = useState(existing?.destinationCity || '')
+  const [hotelCats, setHotelCats] = useState(() => {
+    // Prefill each fixed category from the existing block's nested `cities`.
+    const src = (existing && existing.type === 'hotel' && Array.isArray(existing.cities)) ? existing.cities : []
+    return HOTEL_CATEGORIES.map((category) => {
+      const rows = src
+        .filter((c) => (c.categories || []).some((x) => String(x).toLowerCase() === category.toLowerCase()))
+        .map((c) => ({ city: c.city || '', options: Array.isArray(c.hotels) ? c.hotels.join(' / ') : (c.hotels || ''), rooms: c.rooms ?? '' }))
+      return { category, rows: rows.length ? rows : [{ city: '', options: '', rooms: '' }] }
+    })
+  })
+  const catRows = (i) => hotelCats[i]?.rows || []
+  const setCatRows = (i, rows) => setHotelCats((cs) => cs.map((c, k) => (k === i ? { ...c, rows } : c)))
+  const hotelCities = () => {
+    const seen = []
+    hotelCats.forEach((c) => (c.rows || []).forEach((r) => {
+      const x = String(r.city || '').trim()
+      if (x && !seen.some((s) => s.toLowerCase() === x.toLowerCase())) seen.push(x)
+    }))
+    return seen
+  }
+  // Everyone travels together, so the whole group needs the same room block in
+  // every city — one number is the inventory, applied to each city on save.
+  const [hotelRooms, setHotelRooms] = useState(existing?.totalSeats ?? '')
+
   const dl = useMemo(() => deriveDeadlines(form.departureDate), [form.departureDate])
   // Categories come from the linked package (its hotels are this inventory), so
   // the selling grid lines up with how the package prices.
   const linkedPkg = packages.find((p) => p.id === form.packageId)
   const catOptions = linkedPkg?.categories?.length ? linkedPkg.categories : ['Standard', 'Deluxe', 'Super Deluxe']
-  const canSave = form.airline && form.departureCity && (type === 'hotel' || form.arrivalCity) && form.departureDate && Number(form.totalSeats) > 0
+  const canSave = type === 'hotel'
+    ? (destinationCity && hotelCities().length > 0 && form.departureDate)
+    : (form.airline && form.departureCity && form.arrivalCity && form.departureDate && Number(form.totalSeats) > 0)
+
+  // Hotel save: ONE block for the whole destination. Cities (each with their
+  // categories, hotel options and rooms) are nested under `cities`; the room
+  // total is a single block for the travelling group.
+  const saveHotel = () => {
+    const byCity = {}
+    hotelCats.forEach((c) => (c.rows || []).forEach((r) => {
+      const city = String(r.city || '').trim()
+      if (!city) return
+      const k = city.toLowerCase()
+      if (!byCity[k]) byCity[k] = { city, categories: [], hotels: [] }
+      if (r.options) byCity[k].hotels.push(String(r.options).trim())
+      if (c.category && !byCity[k].categories.includes(c.category)) byCity[k].categories.push(c.category)
+    }))
+    const rooms = Math.max(0, Number(hotelRooms) || 0)
+    const cities = Object.values(byCity).map((c) => ({ city: c.city, categories: c.categories, hotels: c.hotels, rooms }))
+    const dest = destinationCity || 'Destination'
+    const values = {
+      type: 'hotel',
+      inventoryId: existing?.inventoryId || `HT-${cityCode(dest)}-${Math.floor(1000 + Math.random() * 9000)}`,
+      airline: dest,
+      departureCity: dest,
+      arrivalCity: cities.map((c) => c.city).join(', '),
+      destinationCity,
+      cities,
+      sector: `${dest} · stay`,
+      flightNo: `${cities.length} ${cities.length === 1 ? 'city' : 'cities'}`,
+      departureDate: form.departureDate,
+      returnDate: form.returnDate || form.departureDate,
+      totalSeats: rooms,
+      allocatedSeats: existing?.allocatedSeats || 0,
+      namesCaptured: existing?.namesCaptured || 0,
+      releasedSeats: existing?.releasedSeats || 0,
+      vendors: form.vendors.map((v) => v.trim()).filter(Boolean),
+      status: form.status,
+      packageId: form.packageId,
+      remarks: form.remarks,
+      imageUrl: existing?.imageUrl || '',
+      deadlineOverride: ovr.on,
+      namingDeadline: ovr.on ? (ovr.namingDeadline || dl.namingDeadline) : '',
+      releaseDeadline: ovr.on ? (ovr.releaseDeadline || dl.releaseDeadline) : '',
+    }
+    values.vendors.forEach((x) => addVendor(x))
+    const invId = editing ? (updateInventory(existing.id, values), existing.id) : addInventory(values).id
+    navigate(`${L.route}/${invId}`)
+  }
 
   const save = () => {
+    if (type === 'hotel') return saveHotel()
     const sector = type === 'hotel'
       ? form.departureCity
       : `${cityCode(form.departureCity)} → ${cityCode(form.arrivalCity)}`
@@ -171,8 +250,74 @@ export default function InventoryForm({ type: typeProp = 'airline' }) {
 
       <div className="grid gap-6 px-4 py-5 sm:px-6 lg:grid-cols-3 lg:px-8 lg:py-6">
         <div className="grid gap-6 lg:col-span-2">
+          {type === 'hotel' && (
+            <>
+              <Card className="p-6">
+                <Eyebrow className="mb-4">Destination</Eyebrow>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Field label="Destination city" required hint="The overall destination, e.g. Andaman.">
+                    <Input value={destinationCity} onChange={(e) => setDestinationCity(e.target.value)} placeholder="Andaman" />
+                  </Field>
+                  <Field label="Linked package">
+                    <Select value={form.packageId} onChange={set('packageId')}>
+                      <option value="">None</option>
+                      {packages.map((p) => <option key={p.id} value={p.id}>{p.name} — {p.origin}</option>)}
+                    </Select>
+                  </Field>
+                  <Field label="Check-in" required><Input type="date" value={form.departureDate} onChange={set('departureDate')} /></Field>
+                  <Field label="Check-out"><Input type="date" value={form.returnDate} onChange={set('returnDate')} /></Field>
+                  <Field label="Status" hint="Turns Inactive automatically once the stay date passes.">
+                    <Select value={form.status} onChange={set('status')}>
+                      {INVENTORY_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </Select>
+                  </Field>
+                </div>
+              </Card>
+
+              <Card className="p-6">
+                <Eyebrow className="mb-1">Hotels by category</Eyebrow>
+                <p className="mb-4 text-xs text-muted-foreground">Cities and hotel options for each category.</p>
+                <div className="grid gap-4">
+                  {hotelCats.map((cat, ci) => (
+                    <div key={cat.category} className="rounded-xl border p-4">
+                      <div className="mb-3 flex items-center gap-2">
+                        <Pill tone={cat.category === 'Super Deluxe' ? 'proposal' : 'neutral'}>{cat.category}</Pill>
+                        <span className="text-xs text-muted-foreground">hotels</span>
+                      </div>
+                      <div className="grid gap-2">
+                        {catRows(ci).map((r, i) => (
+                          <div key={i} className="flex flex-col gap-2 sm:flex-row">
+                            <Input list="oyo-cities" className="sm:w-44" value={r.city} placeholder="City"
+                              onChange={(e) => setCatRows(ci, catRows(ci).map((x, k) => (k === i ? { ...x, city: e.target.value } : x)))} />
+                            <Input className="flex-1" value={r.options} placeholder="Hotel A / Hotel B / similar"
+                              onChange={(e) => setCatRows(ci, catRows(ci).map((x, k) => (k === i ? { ...x, options: e.target.value } : x)))} />
+                            <button type="button" onClick={() => setCatRows(ci, catRows(ci).filter((_, k) => k !== i))}
+                              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border text-muted-foreground hover:text-status-urgent"><Icon name="x" size={15} /></button>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-2">
+                        <Button variant="ghost" size="sm" icon="plus" onClick={() => setCatRows(ci, [...catRows(ci), { city: '', options: '', rooms: '' }])}>Add city</Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+
+              <Card className="p-6">
+                <Eyebrow className="mb-1">Total rooms</Eyebrow>
+                <p className="mb-4 text-xs text-muted-foreground">The group travels together, so this room block applies to every city. This is your inventory quantity.</p>
+                <div className="flex items-center gap-3">
+                  <div className="w-40"><Input type="number" min="0" value={hotelRooms} placeholder="50" onChange={(e) => setHotelRooms(e.target.value)} /></div>
+                  <span className="text-sm text-muted-foreground">rooms per city{hotelCities().length > 0 ? ` · ${hotelCities().length} ${hotelCities().length === 1 ? 'city' : 'cities'}` : ''}</span>
+                </div>
+              </Card>
+            </>
+          )}
+          {type === 'airline' && (
+            <>
           <Card className="p-6">
-            <Eyebrow className="mb-4">{type === 'hotel' ? 'Hotel & stay' : 'Flight & route'}</Eyebrow>
+            <Eyebrow className="mb-4">Flight & route</Eyebrow>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {type === 'airline' ? (
                 <Field label="Outbound airline" required hint="Pick an airline — its logo shows on the record.">
@@ -272,6 +417,8 @@ export default function InventoryForm({ type: typeProp = 'airline' }) {
               </Select>
             </Field>
           </Card>
+            </>
+          )}
 
         </div>
 

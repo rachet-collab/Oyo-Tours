@@ -33,7 +33,7 @@ const NAV = {
   ],
   sales: [
     { to: '/packages', label: 'Explore', svg: icPackages },
-    { to: '/bookings', label: 'Bookings', svg: icBookings },
+    { to: '/bookings', label: 'My bookings', svg: icBookings },
   ],
 }
 

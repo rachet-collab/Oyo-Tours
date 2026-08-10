@@ -23,6 +23,16 @@ import { advancePerSeat } from '../lib/policy.js'
 
 const MONTHS_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const monthLabel = (key) => { const [y, m] = key.split('-'); return `${MONTHS_ABBR[+m - 1]} ${y}` }
+// Crisp travel-date range: "16–21 Oct 2026" · "30 Oct – 4 Nov 2026" · cross-year full.
+const crispRange = (a, b) => {
+  if (!a) return ''
+  const [ya, ma, da] = a.split('-').map(Number)
+  if (!b || b === a) return `${da} ${MONTHS_ABBR[ma - 1]} ${ya}`
+  const [yb, mb, db] = b.split('-').map(Number)
+  if (ya === yb && ma === mb) return `${da}–${db} ${MONTHS_ABBR[ma - 1]} ${ya}`
+  if (ya === yb) return `${da} ${MONTHS_ABBR[ma - 1]} – ${db} ${MONTHS_ABBR[mb - 1]} ${ya}`
+  return `${da} ${MONTHS_ABBR[ma - 1]} ${ya} – ${db} ${MONTHS_ABBR[mb - 1]} ${yb}`
+}
 
 const cx = (...c) => c.filter(Boolean).join(' ')
 const MAX_ADULTS = 3 // allowed occupancy: 2 + 1 on extra bed
@@ -107,11 +117,15 @@ export default function Checkout() {
   const parseOpts = (str) => String(str || '').split('/').map((x) => x.trim()).filter(Boolean).filter((x) => !/similar/i.test(x))
   const propertyRows = useMemo(() => {
     const rowsH = pkg && category ? (pkg.hotels?.find((h) => h.category === category)?.rows || []) : []
-    return rowsH.map((r) => ({ city: r.city, options: parseOpts(r.options) })).filter((r) => r.city && r.options.length > 1)
+    return rowsH.map((r) => ({ city: r.city, options: parseOpts(r.options) })).filter((r) => r.city)
   }, [pkg, category])
   const needsProperty = propertyRows.length > 0
+  // Free-text preferred property per city (keyed by city name).
   const [propertyPrefs, setPropertyPrefs] = useState({})
-  const propOf = (r) => propertyPrefs[r.city] ?? r.options[0]
+  const setCityPref = (city, val) => setPropertyPrefs((p) => ({ ...p, [city]: val }))
+  const cityPrefs = () => propertyRows
+    .map((r) => ({ city: r.city, property: String(propertyPrefs[r.city] || '').trim() }))
+    .filter((x) => x.property)
   const pax = useMemo(() => computePax(rooms), [rooms])
   const slots = useMemo(() => travellerSlots(rooms), [rooms])
   const seats = roomsTravellers(rooms)
@@ -226,7 +240,7 @@ export default function Checkout() {
       advancePaid: advanceDue > 0,
       paymentNote: advanceDue > 0 ? `Advance ${inr(advanceDue)} collected${advanceNote.trim() ? ` — ${advanceNote.trim()}` : ''}` : '',
       rooms, travellers: names,
-      hotelPreferences: propertyRows.map((r) => ({ city: r.city, property: propOf(r) })),
+      hotelPreferences: cityPrefs(),
       travellerDetails: forms.map((f, i) => ({
         ...slots[i],
         firstName: f.firstName, lastName: f.lastName, gender: f.gender,
@@ -373,7 +387,7 @@ export default function Checkout() {
                         <InventoryImage inv={{ type: 'airline', airline: d.outbound?.airline, imageUrl: d.outbound?.logoUrl }} size={44} className="shrink-0" />
                         {/* Arrival & departure dates */}
                         <div className="min-w-0 w-44 shrink-0">
-                          <p className="font-semibold">{shortDate(d.date)} → {shortDate(d.returnDate)}</p>
+                          <p className="font-semibold">{crispRange(d.date, d.returnDate)}</p>
                           <p className="text-xs text-muted-foreground">{d.outbound?.airline} {d.outbound?.flightNo}</p>
                         </div>
                         {/* Seats progress bar */}
@@ -505,33 +519,19 @@ export default function Checkout() {
               {stepKey === 'property' && (
                 <div className="grid gap-4">
                   <div>
-                    <Eyebrow>Preferred hotels</Eyebrow>
+                    <Eyebrow>Preferred properties</Eyebrow>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      This category offers more than one property per stop. Pick a preferred hotel — final confirmation is subject to availability.
+                      Optional — note a preferred hotel for each city. Final confirmation is subject to availability.
                     </p>
                   </div>
                   {propertyRows.map((r) => (
-                    <div key={r.city} className="rounded-xl border p-4">
-                      <div className="mb-2 flex items-center gap-2">
-                        <Icon name="building" size={15} className="text-primary" />
-                        <p className="text-sm font-bold">{r.city}</p>
-                        <span className="text-xs text-muted-foreground">{r.options.length} options</span>
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {r.options.map((opt) => {
-                          const active = propOf(r) === opt
-                          return (
-                            <button key={opt} type="button" onClick={() => setPropertyPrefs((p) => ({ ...p, [r.city]: opt }))}
-                              className={cx('flex items-center gap-2.5 rounded-xl border p-3 text-left text-sm transition-colors', active ? 'border-primary bg-secondary ring-2 ring-ring/20' : 'hover:bg-muted')}>
-                              <span className={cx('flex h-5 w-5 shrink-0 items-center justify-center rounded-full border', active ? 'border-primary bg-primary text-primary-foreground' : 'border-border')}>
-                                {active && <Icon name="check" size={11} />}
-                              </span>
-                              <span className="font-medium">{opt}</span>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
+                    <Field key={r.city} label={r.city}>
+                      <Input
+                        value={propertyPrefs[r.city] || ''}
+                        onChange={(e) => setCityPref(r.city, e.target.value)}
+                        placeholder={r.options.length ? `e.g. ${r.options[0]}` : 'Preferred hotel'}
+                      />
+                    </Field>
                   ))}
                 </div>
               )}
@@ -648,10 +648,10 @@ export default function Checkout() {
                   <Row label="Lead guest" value={leadName || '—'} sub={slots[0]?.type === 'adult' ? 'Adult' : ''} />
                   <Row label="Package" value={pkg?.destinationCity} sub={`${pkg?.origin} · ${pkg?.durationLabel}`} />
                   <Row label="Category" value={category} />
-                  <Row label="Travel date" value={departure ? `${shortDate(departure.date)} → ${shortDate(departure.returnDate)}` : ''} sub={departure ? `${departure.outbound.flightNo} / ${departure.inbound.flightNo}` : ''} />
+                  <Row label="Travel date" value={departure ? crispRange(departure.date, departure.returnDate) : ''} sub={departure ? `${departure.outbound.flightNo} / ${departure.inbound.flightNo}` : ''} />
                   <Row label="Rooms" value={`${rooms.length} room${rooms.length > 1 ? 's' : ''} · ${seats} pax`} sub={paxSummary(pax)} />
-                  {propertyRows.length > 0 && (
-                    <Row label="Preferred hotels" value={propertyRows.map((r) => `${r.city}: ${propOf(r)}`).join(' · ')} />
+                  {cityPrefs().length > 0 && (
+                    <Row label="Preferred properties" value={cityPrefs().map((x) => `${x.city}: ${x.property}`).join(' · ')} />
                   )}
                   {addOnsSelected.length > 0 && (
                     <Row label="Add-ons" value={addOnsSelected.map((a) => `${a.item} ×${a.qty}`).join(', ')} />
@@ -764,7 +764,7 @@ export default function Checkout() {
                   pax,
                   grid,
                   addOns: addOnsSelected,
-                  hotelPreferences: propertyRows.map((r) => ({ city: r.city, property: propOf(r) })),
+                  hotelPreferences: cityPrefs(),
                   amount,
                   quoteDate: shortDate(new Date().toISOString().slice(0, 10)),
                 })}

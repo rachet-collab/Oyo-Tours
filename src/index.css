@@ -1,0 +1,94 @@
+@import 'tailwindcss';
+
+/* ------------------------------------------------------------------ */
+/*  Eventstrat design system — tokens                                  */
+/*  Calm, airy, precise B2B SaaS. Lilac canvas, white cards, one       */
+/*  confident purple, Montserrat, hairline borders, soft shadows.      */
+/* ------------------------------------------------------------------ */
+@theme {
+  --font-sans: 'Montserrat', ui-sans-serif, system-ui, sans-serif;
+
+  /* Surfaces */
+  --color-background: #f6f6f7; /* soft neutral canvas */
+  --color-foreground: #171717; /* near-black ink */
+  --color-card: #ffffff; /* white cards */
+  --color-card-foreground: #171717;
+
+  /* Brand */
+  --color-primary: #111111; /* black */
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #ececee; /* neutral tint — active / selected */
+  --color-secondary-foreground: #111111;
+
+  /* Neutrals */
+  --color-muted: #f3f3f5;
+  --color-muted-foreground: #6b6b73; /* muted eyebrow / secondary text */
+  --color-border: #e4e4e8; /* hairline */
+  --color-input: #e4e4e8;
+  --color-ring: #111111;
+
+  /* Semantic status palette — color = meaning only */
+  --color-status-new: #2d6499; /* blue */
+  --color-status-new-bg: #e8f0f8;
+  --color-status-qualified: #0a7c7e; /* teal */
+  --color-status-qualified-bg: #e2f2f2;
+  --color-status-proposal: #b76e00; /* gold */
+  --color-status-proposal-bg: #fbf1de;
+  --color-status-won: #118d57; /* green */
+  --color-status-won-bg: #e5f4ec;
+  --color-status-urgent: #b01f31; /* red */
+  --color-status-urgent-bg: #fbe9eb;
+
+  /* Radii */
+  --radius-2xl: 1rem;
+
+  /* Soft small shadow */
+  --shadow-sm: 0 1px 2px 0 rgb(28 22 38 / 0.04), 0 1px 3px 0 rgb(28 22 38 / 0.06);
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Tight, confident headings */
+h1,
+h2,
+h3,
+h4 {
+  letter-spacing: -0.02em;
+}
+
+::selection {
+  background: var(--color-secondary);
+  color: var(--color-primary);
+}
+
+/* Thin, calm scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #d4d4d8;
+  border-radius: 999px;
+  border: 3px solid var(--color-background);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b8b8c0;
+}

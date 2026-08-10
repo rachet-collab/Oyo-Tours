@@ -30,7 +30,7 @@ export default function Packages() {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [origin, setOrigin] = useState('')
-  const [country, setCountry] = useState('')
+  const [destCity, setDestCity] = useState('')
   const [month, setMonth] = useState('')
   const [life, setLife] = useState('active') // admin lifecycle filter
   const [importOpen, setImportOpen] = useState(false)
@@ -41,18 +41,18 @@ export default function Packages() {
   const isActive = (p) => p.active !== false
 
   const origins = [...new Set(packages.map((p) => p.origin).filter(Boolean))].sort()
-  const countries = [...new Set(packages.map((p) => p.country).filter(Boolean))].sort()
+  const destCities = [...new Set(packages.map((p) => p.destinationCity).filter(Boolean))].sort()
   // Distinct departure months (YYYY-MM) across all packages, chronological.
   const months = [
     ...new Set(packages.flatMap((p) => departuresForPackage(p.id).map((d) => d.date.slice(0, 7)))),
   ].sort()
-  const hasFilters = query || origin || country || month
+  const hasFilters = query || origin || destCity || month
 
   const filtered = packages.filter((p) => {
     const q = query.toLowerCase()
     const mq = !q || p.name.toLowerCase().includes(q) || p.destinationCity.toLowerCase().includes(q) || p.origin.toLowerCase().includes(q) || (p.code || '').toLowerCase().includes(q)
     const mo = !origin || p.origin === origin
-    const mc = !country || p.country === country
+    const mc = !destCity || p.destinationCity === destCity
     const mm = !month || departuresForPackage(p.id).some((d) => d.date.slice(0, 7) === month)
     // Sales only ever see active packages; admin & operations can filter Active/Inactive/All.
     const ml = isSales ? isActive(p) : (life === 'all' ? true : life === 'active' ? isActive(p) : !isActive(p))
@@ -95,10 +95,10 @@ export default function Packages() {
             {origins.map((o) => <option key={o} value={o}>{o}</option>)}
           </Select>
         </div>
-        <div className="w-44">
-          <Select value={country} onChange={(e) => setCountry(e.target.value)}>
-            <option value="">All countries</option>
-            {countries.map((c) => <option key={c} value={c}>{c}</option>)}
+        <div className="w-48">
+          <Select value={destCity} onChange={(e) => setDestCity(e.target.value)}>
+            <option value="">All destination cities</option>
+            {destCities.map((c) => <option key={c} value={c}>{c}</option>)}
           </Select>
         </div>
         <div className="w-48">
@@ -108,7 +108,7 @@ export default function Packages() {
           </Select>
         </div>
         {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={() => { setQuery(''); setOrigin(''); setCountry(''); setMonth('') }}>
+          <Button variant="ghost" size="sm" onClick={() => { setQuery(''); setOrigin(''); setDestCity(''); setMonth('') }}>
             Clear
           </Button>
         )}

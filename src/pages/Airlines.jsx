@@ -56,17 +56,17 @@ export default function Airlines() {
           <p className="mt-0.5 text-xs text-muted-foreground">The code is the flight-number prefix (e.g. <span className="font-mono">AI</span>, <span className="font-mono">6E</span>). We’ll suggest one from the name.</p>
           <div className="mt-3 flex flex-wrap items-end gap-2">
             <div className="min-w-[220px] flex-1">
-              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Airline name</span>
+              <span className="mb-1 block text-[13px] font-semibold text-muted-foreground">Airline name</span>
               <Input value={name} onChange={(e) => setName(e.target.value)}
                 onBlur={() => { if (!code && name.trim()) setCode(airlineCode(name.trim())) }}
                 placeholder="e.g. Air India Express" />
             </div>
             <div className="w-28">
-              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Code</span>
+              <span className="mb-1 block text-[13px] font-semibold text-muted-foreground">Code</span>
               <Input value={code} onChange={(e) => setCode(e.target.value.toUpperCase().slice(0, 3))} placeholder="AI" className="font-mono uppercase" />
             </div>
             <div className="min-w-[200px] flex-1">
-              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Logo URL (optional)</span>
+              <span className="mb-1 block text-[13px] font-semibold text-muted-foreground">Logo URL (optional)</span>
               <Input value={logo} onChange={(e) => setLogo(e.target.value)} placeholder="https://…" />
             </div>
             <Button icon="plus" onClick={add} disabled={!canAdd}>Add airline</Button>

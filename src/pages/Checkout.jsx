@@ -97,7 +97,8 @@ export default function Checkout() {
     [departures],
   )
   const shownDepartures = useMemo(
-    () => (depMonth ? departures.filter((d) => (d.date || '').slice(0, 7) === depMonth) : departures),
+    () => (depMonth ? departures.filter((d) => (d.date || '').slice(0, 7) === depMonth) : departures)
+      .slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))),
     [departures, depMonth],
   )
   const departure = departures.find((d) => d.id === departureId)

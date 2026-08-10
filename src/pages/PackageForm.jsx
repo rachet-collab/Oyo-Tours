@@ -46,7 +46,7 @@ function fileToDataUrl(file, max = 1100, quality = 0.82) {
 export default function PackageForm() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { packageById, addPackage, updatePackage, addDeparture, departuresForPackage, updateInventory, termsTemplates, saveTermsTemplate, deleteTermsTemplate, hotelRegistry } = useApp()
+  const { packageById, addPackage, updatePackage, addDeparture, departuresForPackage, updateInventory, termsTemplates, saveTermsTemplate, deleteTermsTemplate } = useApp()
   const existing = id ? packageById(id) : null
   const editing = Boolean(existing)
 
@@ -395,11 +395,6 @@ export default function PackageForm() {
                   <Input value={form.destinationsLabel} onChange={set('destinationsLabel')} placeholder="2N Ubud · 3N Kuta" />
                 </Field>
               </div>
-              <div className="sm:col-span-2">
-                <Field label="Short description">
-                  <Textarea rows={2} value={form.blurb} onChange={set('blurb')} placeholder="Beaches, temples and rice terraces…" />
-                </Field>
-              </div>
             </div>
 
             <div className="mt-5">
@@ -517,27 +512,6 @@ export default function PackageForm() {
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <Button variant="ghost" size="sm" icon="plus" onClick={() => setHotelRows(c, [...hotelRows(c), { city: '', options: '' }])}>Add city</Button>
-                        {hotelRegistry.length > 0 && (
-                          <div className="w-60">
-                            <Select
-                              value=""
-                              onChange={(e) => {
-                                const h = hotelRegistry.find((x) => `${x.city}|${x.name}` === e.target.value)
-                                if (!h) return
-                                // Pull a hotel block from inventory into a new city row.
-                                const label = [h.name, h.roomType].filter(Boolean).join(' · ')
-                                setHotelRows(c, [...hotelRows(c), { city: h.city || '', options: label || h.name || '' }])
-                              }}
-                            >
-                              <option value="">＋ Pull from inventory…</option>
-                              {hotelRegistry.map((h) => (
-                                <option key={`${h.city}|${h.name}`} value={`${h.city}|${h.name}`}>
-                                  {h.city ? `${h.city} — ${h.name}` : h.name}
-                                </option>
-                              ))}
-                            </Select>
-                          </div>
-                        )}
                       </div>
                     </div>
                   ))}

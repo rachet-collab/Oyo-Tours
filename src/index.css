@@ -3,10 +3,10 @@
 /* ------------------------------------------------------------------ */
 /*  Eventstrat design system — tokens                                  */
 /*  Calm, airy, precise B2B SaaS. Lilac canvas, white cards, one       */
-/*  confident purple, Montserrat, hairline borders, soft shadows.      */
+/*  confident purple, Public Sans, hairline borders, soft shadows.     */
 /* ------------------------------------------------------------------ */
 @theme {
-  --font-sans: 'Montserrat', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Public Sans', ui-sans-serif, system-ui, sans-serif;
 
   /* Surfaces */
   --color-background: #f6f6f7; /* soft neutral canvas */
@@ -27,17 +27,27 @@
   --color-input: #e4e4e8;
   --color-ring: #111111;
 
-  /* Semantic status palette — color = meaning only */
+  /* Semantic status palette — color = meaning only.
+     Brand success / warning / error are the canonical trio; the older
+     won / proposal / urgent names alias the same values so existing
+     markup keeps working. Use for status pills, Delete/Clear, chips. */
+  --color-success: #22c55e; /* green  */
+  --color-success-bg: #e7f8ee;
+  --color-warning: #ffab00; /* amber  */
+  --color-warning-bg: #fff3d6;
+  --color-error: #ff5630;   /* coral  */
+  --color-error-bg: #ffeae3;
+
   --color-status-new: #2d6499; /* blue */
   --color-status-new-bg: #e8f0f8;
   --color-status-qualified: #0a7c7e; /* teal */
   --color-status-qualified-bg: #e2f2f2;
-  --color-status-proposal: #b76e00; /* gold */
-  --color-status-proposal-bg: #fbf1de;
-  --color-status-won: #118d57; /* green */
-  --color-status-won-bg: #e5f4ec;
-  --color-status-urgent: #b01f31; /* red */
-  --color-status-urgent-bg: #fbe9eb;
+  --color-status-proposal: #ffab00; /* warning (amber) */
+  --color-status-proposal-bg: #fff3d6;
+  --color-status-won: #22c55e; /* success (green) */
+  --color-status-won-bg: #e7f8ee;
+  --color-status-urgent: #ff5630; /* error (coral) */
+  --color-status-urgent-bg: #ffeae3;
 
   /* Radii */
   --radius-2xl: 1rem;
@@ -92,3 +102,21 @@ h4 {
 ::-webkit-scrollbar-thumb:hover {
   background: #b8b8c0;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Typography scale — Minimal Design System (Public Sans)             */
+/*  Use these classes for headings & text roles instead of ad-hoc      */
+/*  font-size / font-weight combos. Weights: 400/500/600/700/800.      */
+/* ------------------------------------------------------------------ */
+.text-h1 { font-size: 2.5rem; line-height: 1.25; font-weight: 800; letter-spacing: -0.02em; }
+.text-h2 { font-size: 2rem; line-height: 1.33; font-weight: 800; letter-spacing: -0.02em; }
+.text-h3 { font-size: 1.5rem; line-height: 1.5; font-weight: 700; letter-spacing: -0.01em; }
+.text-h4 { font-size: 1.25rem; line-height: 1.5; font-weight: 700; letter-spacing: -0.01em; }
+.text-h5 { font-size: 1.125rem; line-height: 1.5; font-weight: 700; }
+.text-h6 { font-size: 1.0625rem; line-height: 1.55; font-weight: 700; }
+.text-subtitle1 { font-size: 1rem; line-height: 1.5; font-weight: 600; }
+.text-subtitle2 { font-size: 0.875rem; line-height: 1.57; font-weight: 600; }
+.text-body1 { font-size: 1rem; line-height: 1.5; font-weight: 400; }
+.text-body2 { font-size: 0.875rem; line-height: 1.57; font-weight: 400; }
+.text-caption { font-size: 0.75rem; line-height: 1.5; font-weight: 400; }
+.text-overline { font-size: 0.75rem; line-height: 1.5; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; }

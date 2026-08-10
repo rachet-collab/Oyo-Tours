@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import TopBar from '../components/layout/TopBar.jsx'
 import Icon from '../components/ui/Icon.jsx'
-import { Button, Card, Pill, EmptyState } from '../components/ui/primitives.jsx'
+import DeleteIcon from '../components/ui/DeleteIcon.jsx'
+import { Button, Card, Chip, Pagination, Pill, EmptyState } from '../components/ui/primitives.jsx'
 import { useApp } from '../store/AppStore.jsx'
 import { inr, shortDate } from '../lib/format.js'
 
@@ -86,6 +87,12 @@ export default function Finance() {
   const rows = txns.filter((t) =>
     filter === 'All' ? true : filter === 'Approved' ? t.approved : !t.approved)
 
+  // Pagination
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(10)
+  useEffect(() => { setPage(1) }, [filter])
+  const pageRows = useMemo(() => rows.slice((page - 1) * perPage, page * perPage), [rows, page, perPage])
+
   return (
     <>
       <TopBar title="Finance" subtitle="Approve the payments your sales team logs against package bookings." />
@@ -150,6 +157,16 @@ export default function Finance() {
           ))}
         </div>
 
+        {/* Active-filter chip */}
+        {filter !== 'All' && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Chip label="Status" value={filter} onClear={() => setFilter('All')} />
+            <button type="button" onClick={() => setFilter('All')} className="ml-1 inline-flex items-center gap-1.5 text-xs font-semibold text-status-urgent hover:underline">
+              <DeleteIcon size={14} /> Clear
+            </button>
+          </div>
+        )}
+
         <Card className="overflow-hidden">
           {rows.length === 0 ? (
             <EmptyState icon="wallet" title="No transactions" hint="Payments logged by sales against a booking will appear here for approval." />
@@ -157,7 +174,7 @@ export default function Finance() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] text-sm">
                 <thead>
-                  <tr className="border-b text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  <tr className="border-b bg-muted/60 text-left text-[13px] font-semibold text-muted-foreground">
                     <th className="px-5 py-3">Booking</th>
                     <th className="px-3 py-3">Package</th>
                     <th className="px-3 py-3">Logged by</th>
@@ -167,7 +184,7 @@ export default function Finance() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((t) => (
+                  {pageRows.map((t) => (
                     <tr key={t.id} className="border-t hover:bg-muted/40">
                       <td className="px-5 py-3">
                         <button type="button" onClick={() => navigate(`/bookings/${t.id}`)} className="text-left">
@@ -208,6 +225,7 @@ export default function Finance() {
                   ))}
                 </tbody>
               </table>
+              <Pagination page={page} perPage={perPage} total={rows.length} onPage={setPage} onPerPage={(n) => { setPerPage(n); setPage(1) }} />
             </div>
           )}
         </Card>

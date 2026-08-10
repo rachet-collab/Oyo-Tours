@@ -109,6 +109,48 @@ const TAB_BADGE = {
   neutral: 'bg-muted text-muted-foreground',
 }
 
+// Dismissible active-filter chip — "Label : [dark value pill ✕]".
+// Matches the Figma "Table/FiltersResults" chip group: an outlined 8px container
+// (8px padding, 8px gap, 40px tall) holding a "Label :" + a dark inner chip.
+export function Chip({ label, value, onClear }) {
+  return (
+    <span className="inline-flex h-10 items-center gap-2 rounded-lg border px-2 text-[13px]">
+      <span className="pl-1 text-muted-foreground">{label} :</span>
+      <span className="inline-flex items-center gap-1 rounded-md bg-foreground py-1 pl-2 pr-1 text-xs font-semibold text-background">
+        {value}
+        <button type="button" onClick={onClear} aria-label={`Clear ${label}`}
+          className="flex h-4 w-4 items-center justify-center rounded-full bg-background/25 transition-colors hover:bg-background/45">
+          <Icon name="x" size={10} />
+        </button>
+      </span>
+    </span>
+  )
+}
+
+// Standard table pagination footer: rows-per-page, range, prev/next.
+export function Pagination({ page, perPage, total, onPage, onPerPage, perPageOptions = [10, 25, 50] }) {
+  const pages = Math.max(1, Math.ceil(total / perPage))
+  const from = total === 0 ? 0 : (page - 1) * perPage + 1
+  const to = Math.min(total, page * perPage)
+  const btn = 'flex h-8 w-8 items-center justify-center rounded-lg border text-muted-foreground transition-colors enabled:hover:bg-muted disabled:opacity-40'
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-x-6 gap-y-3 border-t px-4 py-3 text-sm">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <span>Rows per page:</span>
+        <select value={perPage} onChange={(e) => onPerPage(Number(e.target.value))}
+          className="rounded-lg border bg-card px-2 py-1 text-sm font-medium text-foreground">
+          {perPageOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+        </select>
+      </div>
+      <span className="tabular-nums text-muted-foreground">{from}–{to} of {total}</span>
+      <div className="flex items-center gap-1.5">
+        <button type="button" className={btn} disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="Previous page"><Icon name="chevronLeft" size={16} /></button>
+        <button type="button" className={btn} disabled={page >= pages} onClick={() => onPage(page + 1)} aria-label="Next page"><Icon name="chevronRight" size={16} /></button>
+      </div>
+    </div>
+  )
+}
+
 // Underline-style filter tab bar with a colored count badge per tab.
 // tabs: [{ key, label, count?, tone?, dot? }]
 export function FilterTabs({ tabs, value, onChange, className = '' }) {
@@ -123,11 +165,11 @@ export function FilterTabs({ tabs, value, onChange, className = '' }) {
             onClick={() => onChange(t.key)}
             className={cx(
               'relative -mb-px flex items-center gap-2 border-b-2 pb-2.5 pt-1 text-sm transition-colors',
-              active ? 'border-primary font-bold text-primary' : 'border-transparent font-semibold text-muted-foreground hover:text-foreground',
+              active ? 'border-foreground font-bold text-foreground' : 'border-transparent font-semibold text-muted-foreground hover:text-foreground',
             )}
           >
             <span className="flex items-center gap-1.5">
-              {t.icon && <Icon name={t.icon} size={16} className={active ? 'text-primary' : 'text-muted-foreground'} />}
+              {t.icon && <Icon name={t.icon} size={16} className={active ? 'text-foreground' : 'text-muted-foreground'} />}
               {t.dot && <span className={cx('h-1.5 w-1.5 rounded-full', t.dotClass || 'bg-current')} />}
               {t.label}
             </span>
@@ -194,7 +236,7 @@ export function Field({ label, hint, children, required }) {
 }
 
 const inputBase =
-  'h-10 w-full rounded-xl border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/25 transition-colors'
+  'h-10 w-full rounded-lg border bg-card px-3.5 text-sm text-foreground placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/25 transition-colors'
 
 export function Input({ className = '', ...props }) {
   return <input className={cx(inputBase, className)} {...props} />

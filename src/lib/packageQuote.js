@@ -57,11 +57,11 @@ export function buildPackageQuoteHtml(pkg, deps = []) {
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>${esc(pkg.code || 'Package')} — ${esc(pkg.destinationCity || 'Quotation')}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{--ink:#111111;--muted:#6b7280;--line:#e5e7eb;--bg:#f7f7f8;}
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:Montserrat,system-ui,-apple-system,sans-serif;color:var(--ink);background:var(--bg);padding:32px;line-height:1.5}
+  body{font-family:'Public Sans',system-ui,-apple-system,sans-serif;color:var(--ink);background:var(--bg);padding:32px;line-height:1.5}
   .sheet{max-width:820px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:18px;padding:44px}
   .top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px}
   .brand{font-size:26px;font-weight:800;letter-spacing:-.5px}
@@ -216,11 +216,11 @@ export function buildGuestQuoteHtml(pkg, sel = {}) {
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Quote — ${esc(leadName)} · ${esc(pkg.destinationCity || '')}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{--ink:#111111;--muted:#6b7280;--line:#e5e7eb;--bg:#f7f7f8;}
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:Montserrat,system-ui,-apple-system,sans-serif;color:var(--ink);background:var(--bg);padding:32px;line-height:1.5}
+  body{font-family:'Public Sans',system-ui,-apple-system,sans-serif;color:var(--ink);background:var(--bg);padding:32px;line-height:1.5}
   .sheet{max-width:820px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:18px;padding:44px}
   .top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px}
   .brand{font-size:26px;font-weight:800;letter-spacing:-.5px}

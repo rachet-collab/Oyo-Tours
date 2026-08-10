@@ -1,16 +1,19 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import TopBar from '../components/layout/TopBar.jsx'
 import Icon from '../components/ui/Icon.jsx'
+import DeleteIcon from '../components/ui/DeleteIcon.jsx'
 import {
   Avatar,
   Button,
   Card,
+  Chip,
   Eyebrow,
   Field,
   FilterTabs,
   Input,
   Modal,
+  Pagination,
   Pill,
   Select,
   StatusPill,
@@ -55,6 +58,13 @@ export default function Bookings() {
     return c
   }, [visible])
 
+  // Pagination
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(10)
+  useEffect(() => { setPage(1) }, [filter, query, pkgFilter])
+  const pageRows = useMemo(() => shown.slice((page - 1) * perPage, page * perPage), [shown, page, perPage])
+  const hasFilters = filter !== 'All' || !!query.trim()
+
   return (
     <>
       <TopBar
@@ -91,6 +101,17 @@ export default function Bookings() {
           </div>
         </div>
 
+        {/* Active-filter chips (the tab counts already show totals) */}
+        {hasFilters && (
+          <div className="flex flex-wrap items-center gap-2">
+            {filter !== 'All' && <Chip label="Status" value={filter} onClear={() => setFilter('All')} />}
+            {query.trim() && <Chip label="Search" value={query} onClear={() => setQuery('')} />}
+            <button type="button" onClick={() => { setFilter('All'); setQuery('') }} className="ml-1 inline-flex items-center gap-1.5 text-xs font-semibold text-status-urgent hover:underline">
+              <DeleteIcon size={14} /> Clear
+            </button>
+          </div>
+        )}
+
         <Card className="overflow-hidden">
           {shown.length === 0 ? (
             <EmptyState icon="ticket" title="No bookings here" hint="Create a new booking or switch filters." />
@@ -98,7 +119,7 @@ export default function Bookings() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[920px] text-sm">
                 <thead>
-                  <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  <tr className="border-b bg-muted/60 text-left text-[13px] font-semibold text-muted-foreground">
                     <th className="px-5 py-3 font-semibold">Reference</th>
                     <th className="px-3 py-3 font-semibold">Guest</th>
                     <th className="px-3 py-3 font-semibold">Package · Departure</th>
@@ -109,7 +130,7 @@ export default function Bookings() {
                   </tr>
                 </thead>
                 <tbody>
-                  {shown.map((b) => {
+                  {pageRows.map((b) => {
                     const g = guestById(b.guestId)
                     const p = packageById(b.packageId)
                     const d = departureById(b.departureId)
@@ -164,6 +185,7 @@ export default function Bookings() {
                   })}
                 </tbody>
               </table>
+              <Pagination page={page} perPage={perPage} total={shown.length} onPage={setPage} onPerPage={(n) => { setPerPage(n); setPage(1) }} />
             </div>
           )}
         </Card>

@@ -490,7 +490,7 @@ function DeparturesTab({ pkg, departures, available, isAdmin }) {
         <div className="overflow-x-auto border-t">
           <table className="w-full min-w-[720px] text-sm">
             <thead>
-              <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <tr className="border-b bg-muted/60 text-left text-[13px] font-semibold text-muted-foreground">
                 <th className="px-5 py-2.5 font-semibold">Departure</th>
                 <th className="px-3 py-2.5 font-semibold">Outbound</th>
                 <th className="px-3 py-2.5 font-semibold">Return</th>
@@ -552,7 +552,7 @@ function PricingTab({ pkg, departures }) {
           <div className="overflow-x-auto border-t">
             <table className="w-full min-w-[720px] text-sm">
               <thead>
-                <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                <tr className="border-b bg-muted/60 text-left text-[13px] font-semibold text-muted-foreground">
                   <th className="px-5 py-2.5 font-semibold">Departure</th>
                   {OCCUPANCY.map((o) => (
                     <th key={o.key} className="px-3 py-2.5 font-semibold">

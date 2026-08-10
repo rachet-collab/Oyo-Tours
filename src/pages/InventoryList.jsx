@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import TopBar from '../components/layout/TopBar.jsx'
 import Icon from '../components/ui/Icon.jsx'
-import { Button, Card, FilterTabs, Input, Modal, Pill, SeatMeter, Select, EmptyState } from '../components/ui/primitives.jsx'
+import { Button, Card, Chip, FilterTabs, Input, Modal, Pagination, Pill, SeatMeter, Select, EmptyState } from '../components/ui/primitives.jsx'
 import InventoryImage from '../components/InventoryImage.jsx'
 import DeleteIcon from '../components/ui/DeleteIcon.jsx'
 import { useApp } from '../store/AppStore.jsx'
@@ -11,6 +11,16 @@ import { shortDate } from '../lib/format.js'
 const cx = (...c) => c.filter(Boolean).join(' ')
 const MONTHS_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const monthLabel = (key) => { const [y, m] = key.split('-'); return `${MONTHS_ABBR[+m - 1]} ${y}` }
+// Airport code → city, so the route shows readable origin/destination cities.
+const CITY = {
+  DEL: 'Delhi', BOM: 'Mumbai', IXZ: 'Port Blair', MAA: 'Chennai', BLR: 'Bengaluru',
+  CCU: 'Kolkata', HYD: 'Hyderabad', GOI: 'Goa', GOX: 'Goa', COK: 'Kochi', AMD: 'Ahmedabad',
+  PNQ: 'Pune', JAI: 'Jaipur', SXR: 'Srinagar', CDG: 'Paris', LHR: 'London', DXB: 'Dubai',
+  AUH: 'Abu Dhabi', DOH: 'Doha', SIN: 'Singapore', BKK: 'Bangkok', HKT: 'Phuket',
+  DPS: 'Bali', KUL: 'Kuala Lumpur', HAN: 'Hanoi', SGN: 'Ho Chi Minh', MLE: 'Malé',
+  CMB: 'Colombo', KTM: 'Kathmandu', IST: 'Istanbul', HKG: 'Hong Kong', NRT: 'Tokyo',
+}
+const cityName = (code) => CITY[String(code || '').toUpperCase()] || code || ''
 
 function Stat({ label, value, icon }) {
   return (
@@ -23,17 +33,6 @@ function Stat({ label, value, icon }) {
         <p className="truncate text-lg font-bold tabular-nums">{value}</p>
       </div>
     </Card>
-  )
-}
-
-// A dismissible active-filter chip (matches the reference filter design).
-function Chip({ label, value, onClear }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-lg border border-dashed px-2.5 py-1 text-xs">
-      <span className="text-muted-foreground">{label}:</span>
-      <span className="rounded-md bg-secondary px-1.5 py-0.5 font-semibold text-primary">{value}</span>
-      <button type="button" onClick={onClear} className="text-muted-foreground hover:text-foreground"><Icon name="x" size={12} /></button>
-    </span>
   )
 }
 
@@ -70,9 +69,17 @@ export default function InventoryList({ type = 'airline' }) {
       const mTo = !toCity || i.arrivalCity === toCity
       const mm = !month || (i.departureDate && i.departureDate.slice(0, 7) === month)
       return mq && mFrom && mTo && mm
-    }),
+    })
+      // Dates always ascending.
+      .sort((a, b) => String(a.departureDate || '').localeCompare(String(b.departureDate || ''))),
     [base, query, fromCity, toCity, month],
   )
+
+  // Pagination.
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(10)
+  useEffect(() => { setPage(1) }, [query, fromCity, toCity, month, life, type])
+  const pageRows = useMemo(() => rows.slice((page - 1) * perPage, page * perPage), [rows, page, perPage])
 
   // Stats reflect the CURRENT filtered rows, not just the lifecycle tab.
   const s = useMemo(() => ({
@@ -146,21 +153,17 @@ export default function InventoryList({ type = 'airline' }) {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold">{rows.length} result{rows.length === 1 ? '' : 's'} found</span>
-            {hasFilters && (
-              <>
-                <span className="mx-1 text-muted-foreground">·</span>
-                {query && <Chip label="Search" value={query} onClear={() => setQuery('')} />}
-                {fromCity && <Chip label={isHotelView ? 'City' : 'From'} value={fromCity} onClear={() => setFromCity('')} />}
-                {toCity && <Chip label="To" value={toCity} onClear={() => setToCity('')} />}
-                {month && <Chip label="Month" value={monthLabel(month)} onClear={() => setMonth('')} />}
-                <button type="button" onClick={clearAll} className="inline-flex items-center gap-1 text-xs font-semibold text-status-urgent hover:underline">
-                  <Icon name="x" size={13} /> Clear
-                </button>
-              </>
-            )}
-          </div>
+          {hasFilters && (
+            <div className="flex flex-wrap items-center gap-2">
+              {query && <Chip label="Search" value={query} onClear={() => setQuery('')} />}
+              {fromCity && <Chip label={isHotelView ? 'City' : 'From'} value={fromCity} onClear={() => setFromCity('')} />}
+              {toCity && <Chip label="To" value={toCity} onClear={() => setToCity('')} />}
+              {month && <Chip label="Month" value={monthLabel(month)} onClear={() => setMonth('')} />}
+              <button type="button" onClick={clearAll} className="ml-1 inline-flex items-center gap-1.5 text-xs font-semibold text-status-urgent hover:underline">
+                <DeleteIcon size={14} /> Clear
+              </button>
+            </div>
+          )}
         </Card>
 
         {/* Stats — below the filters, reflecting the filtered rows */}
@@ -178,18 +181,18 @@ export default function InventoryList({ type = 'airline' }) {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1040px] text-sm">
                 <thead>
-                  <tr className="border-b text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  <tr className="border-b bg-muted/60 text-left text-[13px] font-semibold text-muted-foreground">
                     <th className="px-5 py-3">Inventory</th>
                     <th className="px-3 py-3">Package</th>
                     <th className="px-3 py-3">Route / stay</th>
-                    <th className="px-3 py-3">Date</th>
+                    <th className="px-3 py-3">Travel dates</th>
                     <th className="px-3 py-3">{unitLabel}</th>
                     <th className="px-3 py-3">Vendors</th>
-                    <th className="px-5 py-3">Link</th>
+                    <th className="px-5 py-3" aria-label="Actions" />
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((i) => {
+                  {pageRows.map((i) => {
                     const hot = i.releaseDaysLeft != null && i.releaseDaysLeft <= 3 && i.available > 0
                     const pkg = pkgOf(i)
                     return (
@@ -210,15 +213,29 @@ export default function InventoryList({ type = 'airline' }) {
                               <p className="max-w-[220px] truncate font-medium">{pkg.name}</p>
                               <p className="font-mono text-xs text-muted-foreground">{pkg.code}</p>
                             </div>
-                          ) : <span className="text-xs text-muted-foreground">Unlinked</span>}
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 rounded-lg bg-status-urgent-bg px-2 py-1 text-xs font-semibold text-status-urgent">
+                              <span className="h-1.5 w-1.5 rounded-full bg-status-urgent" /> Unlinked
+                            </span>
+                          )}
                         </td>
                         <td>
-                          <p className="font-medium">{i.sector}</p>
-                          <p className="text-xs text-muted-foreground">{i.flightNo}</p>
+                          {isHotelView ? (
+                            <>
+                              <p className="font-medium">{i.sector}</p>
+                              <p className="text-xs text-muted-foreground">{i.flightNo}</p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="font-medium">{cityName(i.departureCity)} <span className="text-muted-foreground">→</span> {cityName(i.arrivalCity)}</p>
+                              <p className="text-xs text-muted-foreground">{i.departureCity} → {i.arrivalCity} · {i.flightNo}</p>
+                            </>
+                          )}
                         </td>
                         <td>
                           <p className="font-medium">{shortDate(i.departureDate)}</p>
-                          {hot && <p className="text-xs font-semibold text-status-urgent">Release in {Math.max(0, i.releaseDaysLeft)}d</p>}
+                          <p className="text-xs text-muted-foreground">→ {shortDate(i.returnDate) || '—'}</p>
+                          {hot && <p className="mt-0.5 text-xs font-semibold text-status-urgent">Release in {Math.max(0, i.releaseDaysLeft)}d</p>}
                         </td>
                         <td>
                           <SeatMeter available={i.available} total={i.totalSeats} />
@@ -234,31 +251,25 @@ export default function InventoryList({ type = 'airline' }) {
                             </div>
                           ) : <span className="text-xs text-muted-foreground">—</span>}
                         </td>
-                        <td className="!px-5">
-                          <div className="flex items-center gap-2">
-                            <span className={cx('inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold',
-                              pkg ? 'bg-status-won-bg text-status-won' : 'bg-status-urgent-bg text-status-urgent')}>
-                              <span className={cx('h-1.5 w-1.5 rounded-full', pkg ? 'bg-status-won' : 'bg-status-urgent')} />
-                              {pkg ? 'Linked' : 'Not linked'}
-                            </span>
-                            {i.status === 'Inactive' && (
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); setToDelete(i) }}
-                                title="Delete inactive record"
-                                aria-label="Delete"
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#FF5630] transition-colors hover:bg-[#FF5630]/10"
-                              >
-                                <DeleteIcon size={18} />
-                              </button>
-                            )}
-                          </div>
+                        <td className="!px-5 text-right">
+                          {i.status === 'Inactive' && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setToDelete(i) }}
+                              title="Delete inactive record"
+                              aria-label="Delete"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#FF5630] transition-colors hover:bg-[#FF5630]/10"
+                            >
+                              <DeleteIcon size={18} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     )
                   })}
                 </tbody>
               </table>
+              <Pagination page={page} perPage={perPage} total={rows.length} onPage={setPage} onPerPage={(n) => { setPerPage(n); setPage(1) }} />
             </div>
           )}
         </Card>

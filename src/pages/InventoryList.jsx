@@ -192,8 +192,8 @@ export default function InventoryList({ type = 'airline' }) {
           <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-foreground px-4 py-2.5 text-background">
             <span className="text-sm font-semibold">{sel.size} selected</span>
             <div className="ml-auto flex items-center gap-2">
-              <Button size="sm" variant="outline" icon="unlink" className="border-background/30 bg-transparent text-background hover:bg-background/10" onClick={bulkDelink}>Delink</Button>
-              <Button size="sm" variant="outline" className="border-background/30 bg-transparent text-background hover:bg-background/10" disabled={selInactive.length === 0} onClick={bulkDelete}>
+              <Button size="sm" variant="outline" icon="unlink" className="!border-background/40 !bg-transparent !text-background hover:!bg-background/15" onClick={bulkDelink}>Delink</Button>
+              <Button size="sm" variant="outline" className="!border-status-urgent/60 !bg-transparent !text-status-urgent hover:!bg-status-urgent/15" disabled={selInactive.length === 0} onClick={bulkDelete}>
                 Delete{selInactive.length ? ` (${selInactive.length})` : ''}
               </Button>
               <button type="button" onClick={() => setSel(new Set())} className="text-xs font-semibold text-background/80 hover:text-background">Clear</button>

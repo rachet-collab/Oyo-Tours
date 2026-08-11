@@ -11,15 +11,19 @@ const cx = (...c) => c.filter(Boolean).join(' ')
 
 // One compact, uniform card. Flight/Hotel show stats + a slim utilisation meter
 // (allocated ÷ purchased); Vendors shows a single count.
-function StatCard({ icon, svg, title, stats, meter, cta, onClick }) {
+function StatCard({ icon, svg, title, stats, meter, cta, onClick, index = 0 }) {
   const tone = { bar: 'bg-success', text: 'text-success' }
   return (
     <Card
       onClick={onClick}
-      className="group flex cursor-pointer flex-col gap-3.5 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+      style={{ animationDelay: `${index * 90}ms` }}
+      className="animate-card-in group flex cursor-pointer flex-col gap-3.5 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
     >
       <div className="flex items-center gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-secondary text-foreground">
+        <span
+          style={{ animationDelay: `${index * 90 + 120}ms` }}
+          className="animate-icon-pop flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-secondary text-foreground transition-transform duration-200 group-hover:scale-110 group-hover:-rotate-3"
+        >
           {svg
             ? <span aria-hidden="true" className="inline-flex [&_svg]:h-[19px] [&_svg]:w-[19px]" dangerouslySetInnerHTML={{ __html: svg }} />
             : <Icon name={icon} size={17} />}
@@ -94,6 +98,7 @@ export default function Inventory() {
       <div className="px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard
+          index={0}
             svg={icFlight}
             title="Flight Inventory"
             desc="Airline seat blocks — routes, dates, allocation & release deadlines."
@@ -107,6 +112,7 @@ export default function Inventory() {
             meter={{ label: 'Inventory utilisation', pct: stats.flightPct }}
           />
           <StatCard
+          index={1}
             svg={icHotel}
             title="Hotel Inventory"
             desc="Hotel room blocks — properties, stays, rooming & release."
@@ -120,6 +126,7 @@ export default function Inventory() {
             meter={{ label: 'Inventory utilisation', pct: stats.hotelPct }}
           />
           <StatCard
+          index={2}
             icon="users"
             title="Vendors"
             desc="Suppliers & consolidators, and the blocks sourced from each."

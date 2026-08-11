@@ -120,3 +120,26 @@ h4 {
 .text-body2 { font-size: 0.875rem; line-height: 1.57; font-weight: 400; }
 .text-caption { font-size: 0.75rem; line-height: 1.5; font-weight: 400; }
 .text-overline { font-size: 0.75rem; line-height: 1.5; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; }
+
+/* ------------------------------------------------------------------ */
+/*  Entrance animations — card appear + icon pop                       */
+/* ------------------------------------------------------------------ */
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes icon-pop {
+  0%   { opacity: 0; transform: scale(0.4); }
+  60%  { opacity: 1; transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+.animate-card-in {
+  opacity: 0;
+  animation: card-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.animate-icon-pop {
+  animation: icon-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-card-in, .animate-icon-pop { animation: none; opacity: 1; }
+}

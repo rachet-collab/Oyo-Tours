@@ -45,7 +45,7 @@ const monthLabel = (key) => {
 }
 
 export default function Packages() {
-  const { packages, fromPrice, pkgSeats, user, departuresForPackage } = useApp()
+  const { packages, fromPrice, pkgSeats, user, departuresForPackage, hydrated } = useApp()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [origin, setOrigin] = useState('')
@@ -143,9 +143,29 @@ export default function Packages() {
         )}
       </div>
 
-      {filtered.length === 0 && (
+      {/* Still loading from the backend — show skeletons instead of an empty state */}
+      {!hydrated && packages.length === 0 && (
+        <div className="grid grid-cols-1 gap-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-6 sm:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Card key={i} className="overflow-hidden">
+              <div className="h-44 animate-pulse bg-muted" />
+              <div className="space-y-3 p-5">
+                <div className="h-3 w-24 animate-pulse rounded bg-muted" />
+                <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-full animate-pulse rounded bg-muted" />
+                <div className="mt-4 flex justify-between border-t pt-3">
+                  <div className="h-6 w-20 animate-pulse rounded bg-muted" />
+                  <div className="h-6 w-24 animate-pulse rounded bg-muted" />
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {hydrated && filtered.length === 0 && (
         <div className="px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
-          <Card><EmptyState icon="search" title="No packages match" hint="Try clearing a filter." /></Card>
+          <Card><EmptyState icon="search" title={packages.length === 0 ? 'No packages yet' : 'No packages match'} hint={packages.length === 0 ? 'Create your first package to get started.' : 'Try clearing a filter.'} /></Card>
         </div>
       )}
 

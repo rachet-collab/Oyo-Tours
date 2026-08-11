@@ -124,6 +124,30 @@ const invFromDb = (r) => r.doc
 const airlineFromDb = (r) => ({ name: r.name, logoUrl: r.logo_url || '', code: r.code || '' })
 
 // --- reads ---------------------------------------------------------------
+// Fast "first paint" load — only the small tables the Packages/Explore landing
+// needs. Fetched first so the portal shows content without waiting on the
+// heavier inventory/bookings payloads.
+export async function loadCore() {
+  if (!hasSupabase) return null
+  try {
+    const [pk, dep, air] = await Promise.all([
+      supabase.from('packages').select('*'),
+      supabase.from('departures').select('*'),
+      supabase.from('airlines').select('*'),
+    ])
+    if (pk.error || dep.error || air.error) return null
+    const data = {
+      packages: pk.data.map(pkgFromDb),
+      departures: dep.data.map(depFromDb),
+    }
+    data.airlines = air.data.length ? air.data.map(airlineFromDb) : seedAirlines
+    return data
+  } catch (e) {
+    console.error('Supabase core load exception', e)
+    return null
+  }
+}
+
 export async function loadAll() {
   if (!hasSupabase) return null
   try {

@@ -16,6 +16,7 @@ import { applicableRule, cancellationRules, refundFor } from '../lib/policy.js'
 import { airlineCode, registerAirline } from '../lib/airlines.js'
 import {
   loadAll,
+  loadCore,
   apiInsertPackage,
   apiUpdatePackage,
   apiDeletePackage,
@@ -326,12 +327,36 @@ export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState)
 
   // Hydrate from Supabase once on mount (if configured & non-empty).
+  // Three-stage for fast first paint:
+  //   1. instant — replay a cached core snapshot from the last visit
+  //   2. fast    — fetch the small core tables (packages/departures/airlines)
+  //   3. full    — fetch everything else (inventory, bookings, …)
   useEffect(() => {
     let active = true
     if (!hasSupabase) return
-    loadAll().then((data) => {
-      if (active && data) dispatch({ type: 'HYDRATE', data })
+
+    const CORE_KEY = 'oyo.coreCache'
+    const cacheCore = (d) => {
+      try { localStorage.setItem(CORE_KEY, JSON.stringify({ packages: d.packages, departures: d.departures, airlines: d.airlines })) } catch { /* quota — skip */ }
+    }
+
+    // 1) Instant paint from the previous session's cached core.
+    try {
+      const cached = localStorage.getItem(CORE_KEY)
+      if (cached) {
+        const d = JSON.parse(cached)
+        if (d && Array.isArray(d.packages)) dispatch({ type: 'HYDRATE', data: d })
+      }
+    } catch { /* ignore bad cache */ }
+
+    // 2) Fast core from the network, then 3) the full payload.
+    loadCore().then((core) => {
+      if (active && core) { dispatch({ type: 'HYDRATE', data: core }); cacheCore(core) }
     })
+    loadAll().then((data) => {
+      if (active && data) { dispatch({ type: 'HYDRATE', data }); cacheCore(data) }
+    })
+
     return () => {
       active = false
     }

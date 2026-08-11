@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import TopBar from '../components/layout/TopBar.jsx'
 import Icon from '../components/ui/Icon.jsx'
@@ -16,7 +16,9 @@ import {
 import { useApp } from '../store/AppStore.jsx'
 import { inr } from '../lib/format.js'
 import { downloadPackageQuote } from '../lib/packageQuote.js'
-import PackageImport from './PackageImport.jsx'
+// Bulk-upload modal pulls in XLSX — load it only when actually opened so the
+// Packages landing page stays lightweight.
+const PackageImport = lazy(() => import('./PackageImport.jsx'))
 
 const cx = (...c) => c.filter(Boolean).join(' ')
 const MONTHS_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -246,7 +248,11 @@ export default function Packages() {
         })}
       </div>
 
-      <PackageImport open={importOpen} onClose={() => setImportOpen(false)} />
+      {importOpen && (
+        <Suspense fallback={null}>
+          <PackageImport open={importOpen} onClose={() => setImportOpen(false)} />
+        </Suspense>
+      )}
     </>
   )
 }

@@ -1,29 +1,42 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, MemoryRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AppProvider, useApp } from './store/AppStore.jsx'
 import AppLayout from './components/layout/AppLayout.jsx'
 import Login from './pages/Login.jsx'
-import Packages from './pages/Packages.jsx'
-import PackageDetail from './pages/PackageDetail.jsx'
-import PackageForm from './pages/PackageForm.jsx'
-import Checkout from './pages/Checkout.jsx'
-import Bookings from './pages/Bookings.jsx'
-import BookingDetail from './pages/BookingDetail.jsx'
-import Guests from './pages/Guests.jsx'
-import Settings from './pages/Team.jsx'
-import Inventory from './pages/Inventory.jsx'
-import InventoryList from './pages/InventoryList.jsx'
-import InventoryDetail from './pages/InventoryDetail.jsx'
-import InventoryForm from './pages/InventoryForm.jsx'
-import BulkUpload from './pages/BulkUpload.jsx'
-import Airlines from './pages/Airlines.jsx'
-import Overview from './pages/Overview.jsx'
-import Finance from './pages/Finance.jsx'
-import Vendors from './pages/Vendors.jsx'
-import Operations from './pages/Operations.jsx'
+
+// Route components are code-split so the initial download is small and the heavy
+// bits (bulk-upload/XLSX, forms, detail pages) only load when first visited.
+// Landing pages (Packages/Explore) load first; everything else lazily.
+const Packages = lazy(() => import('./pages/Packages.jsx'))
+const PackageDetail = lazy(() => import('./pages/PackageDetail.jsx'))
+const PackageForm = lazy(() => import('./pages/PackageForm.jsx'))
+const Checkout = lazy(() => import('./pages/Checkout.jsx'))
+const Bookings = lazy(() => import('./pages/Bookings.jsx'))
+const BookingDetail = lazy(() => import('./pages/BookingDetail.jsx'))
+const Guests = lazy(() => import('./pages/Guests.jsx'))
+const Settings = lazy(() => import('./pages/Team.jsx'))
+const Inventory = lazy(() => import('./pages/Inventory.jsx'))
+const InventoryList = lazy(() => import('./pages/InventoryList.jsx'))
+const InventoryDetail = lazy(() => import('./pages/InventoryDetail.jsx'))
+const InventoryForm = lazy(() => import('./pages/InventoryForm.jsx'))
+const BulkUpload = lazy(() => import('./pages/BulkUpload.jsx'))
+const Airlines = lazy(() => import('./pages/Airlines.jsx'))
+const Finance = lazy(() => import('./pages/Finance.jsx'))
+const Vendors = lazy(() => import('./pages/Vendors.jsx'))
+const Operations = lazy(() => import('./pages/Operations.jsx'))
 
 // Single-file build uses an in-memory router (works from file:// or a sandboxed
 // preview). Normal builds use real URL routing.
 const Router = import.meta.env.VITE_SINGLEFILE ? MemoryRouter : BrowserRouter
+
+// Lightweight fallback while a route chunk loads.
+function RouteFallback() {
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-primary" />
+    </div>
+  )
+}
 
 // Where each role lands after sign-in.
 const HOME = { admin: '/packages', operations: '/packages', sales: '/packages' }
@@ -43,6 +56,7 @@ export default function App() {
   return (
     <AppProvider>
       <Router>
+        <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route element={<AppLayout />}>
@@ -88,6 +102,7 @@ export default function App() {
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </Suspense>
       </Router>
     </AppProvider>
   )

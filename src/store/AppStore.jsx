@@ -17,6 +17,10 @@ import { airlineCode, registerAirline } from '../lib/airlines.js'
 import {
   loadAll,
   loadCore,
+  getCurrentUser,
+  authSignIn,
+  authSignOut,
+  onAuthChange,
   apiInsertPackage,
   apiUpdatePackage,
   apiDeletePackage,
@@ -121,6 +125,7 @@ function saveTermsTemplates(list) {
 
 const initialState = {
   user: null,
+  authReady: !hasSupabase, // true once the initial session check has resolved
   hydrated: !hasSupabase, // when no backend, seeds are the source of truth
   backend: hasSupabase ? 'supabase' : 'local',
   packages: seedPackages,
@@ -183,9 +188,12 @@ const resyncManifest = (inv, booking, details, names) => ({
 function reducer(state, action) {
   switch (action.type) {
     case 'LOGIN':
-      return { ...state, user: action.user }
+      return { ...state, user: action.user, authReady: true }
     case 'LOGOUT':
-      return { ...state, user: null }
+      // Drop the user and any loaded data so a different sign-in starts clean.
+      return { ...state, user: null, authReady: true }
+    case 'AUTH_READY':
+      return { ...state, authReady: true }
     case 'HYDRATE':
       return { ...state, ...action.data, hydrated: true }
 
@@ -326,11 +334,9 @@ function reducer(state, action) {
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState)
 
-  // Hydrate from Supabase once on mount (if configured & non-empty).
-  // Three-stage for fast first paint:
-  //   1. instant — replay a cached core snapshot from the last visit
-  //   2. fast    — fetch the small core tables (packages/departures/airlines)
-  //   3. full    — fetch everything else (inventory, bookings, …)
+  // Auth + data hydration. Data is fetched only once a user is signed in
+  // (RLS requires an authenticated session), then in three stages for fast
+  // first paint: cached snapshot → small core tables → full payload.
   useEffect(() => {
     let active = true
     if (!hasSupabase) return
@@ -340,26 +346,40 @@ export function AppProvider({ children }) {
       try { localStorage.setItem(CORE_KEY, JSON.stringify({ packages: d.packages, departures: d.departures, airlines: d.airlines })) } catch { /* quota — skip */ }
     }
 
-    // 1) Instant paint from the previous session's cached core.
-    try {
-      const cached = localStorage.getItem(CORE_KEY)
-      if (cached) {
-        const d = JSON.parse(cached)
-        if (d && Array.isArray(d.packages)) dispatch({ type: 'HYDRATE', data: d })
-      }
-    } catch { /* ignore bad cache */ }
-
-    // 2) Fast core from the network, then 3) the full payload.
-    loadCore().then((core) => {
-      if (active && core) { dispatch({ type: 'HYDRATE', data: core }); cacheCore(core) }
-    })
-    loadAll().then((data) => {
-      if (active && data) { dispatch({ type: 'HYDRATE', data }); cacheCore(data) }
-    })
-
-    return () => {
-      active = false
+    const hydrateData = () => {
+      // 1) Instant paint from the previous session's cached core.
+      try {
+        const cached = localStorage.getItem(CORE_KEY)
+        if (cached) {
+          const d = JSON.parse(cached)
+          if (d && Array.isArray(d.packages)) dispatch({ type: 'HYDRATE', data: d })
+        }
+      } catch { /* ignore bad cache */ }
+      // 2) Fast core, then 3) full payload.
+      loadCore().then((core) => { if (active && core) { dispatch({ type: 'HYDRATE', data: core }); cacheCore(core) } })
+      loadAll().then((data) => { if (active && data) { dispatch({ type: 'HYDRATE', data }); cacheCore(data) } })
     }
+
+    // Resolve the current session on mount, then react to sign-in / sign-out.
+    getCurrentUser().then((user) => {
+      if (!active) return
+      if (user) { dispatch({ type: 'LOGIN', user }); hydrateData() }
+      else dispatch({ type: 'AUTH_READY' })
+    })
+
+    let signedInId = null
+    const unsub = onAuthChange((user) => {
+      if (!active) return
+      if (user) {
+        if (user.id !== signedInId) { signedInId = user.id; dispatch({ type: 'LOGIN', user }); hydrateData() }
+      } else {
+        signedInId = null
+        try { localStorage.removeItem(CORE_KEY) } catch { /* ignore */ }
+        dispatch({ type: 'LOGOUT' })
+      }
+    })
+
+    return () => { active = false; unsub() }
   }, [])
 
   // Keep the flight-number ↔ airline resolver aware of every saved airline's code.
@@ -861,9 +881,23 @@ export function AppProvider({ children }) {
         .reduce((s, b) => s + b.amount, 0),
     }
 
+    // Auth actions. With a backend these call Supabase Auth (the onAuthChange
+    // listener updates state); without one, they fall back to the local mock.
+    const login = async (email, password) => {
+      if (!hasSupabase) { dispatch({ type: 'LOGIN', user: { email, name: String(email).split('@')[0], role: 'admin' } }); return {} }
+      const res = await authSignIn(email, password)
+      return res
+    }
+    const logout = async () => {
+      await authSignOut()
+      dispatch({ type: 'LOGOUT' })
+    }
+
     return {
       ...state,
       dispatch,
+      login,
+      logout,
       packageById,
       departureById,
       guestById,

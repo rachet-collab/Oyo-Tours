@@ -1,6 +1,51 @@
 import { supabase, hasSupabase } from './supabase.js'
 import { normalizeStatus, seedAirlines } from '../store/data.js'
 
+// --- auth ----------------------------------------------------------------
+// Turn a Supabase session into the app's user object, reading name/role from
+// the profiles table (source of truth for RBAC).
+export async function userFromSession(session) {
+  if (!session?.user) return null
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('name, role, email')
+    .eq('id', session.user.id)
+    .maybeSingle()
+  const meta = session.user.user_metadata || {}
+  return {
+    id: session.user.id,
+    email: profile?.email || session.user.email || '',
+    name: profile?.name || meta.name || (session.user.email || '').split('@')[0],
+    role: profile?.role || meta.role || 'sales',
+  }
+}
+
+export async function getCurrentUser() {
+  if (!hasSupabase) return null
+  const { data } = await supabase.auth.getSession()
+  return userFromSession(data.session)
+}
+
+export async function authSignIn(email, password) {
+  if (!hasSupabase) return { error: { message: 'No backend configured' } }
+  const { data, error } = await supabase.auth.signInWithPassword({ email: String(email).trim(), password })
+  if (error) return { error }
+  return { user: await userFromSession(data.session) }
+}
+
+export async function authSignOut() {
+  if (hasSupabase) await supabase.auth.signOut()
+}
+
+// Subscribe to auth changes; returns an unsubscribe function.
+export function onAuthChange(cb) {
+  if (!hasSupabase) return () => {}
+  const { data } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    cb(await userFromSession(session))
+  })
+  return () => data.subscription.unsubscribe()
+}
+
 // --- mappers: DB (snake_case) <-> app (camelCase) ------------------------
 const d10 = (v) => (v ? String(v).slice(0, 10) : v)
 

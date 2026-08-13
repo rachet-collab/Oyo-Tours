@@ -74,10 +74,10 @@ function NavItem({ item, onNavigate }) {
 }
 
 export default function Sidebar({ className = '', onNavigate, onClose }) {
-  const { user, dispatch } = useApp()
+  const { user, logout: signOut } = useApp()
   const navigate = useNavigate()
   const items = NAV[user?.role] || NAV.sales
-  const logout = () => { dispatch({ type: 'LOGOUT' }); navigate('/login') }
+  const logout = async () => { await signOut(); navigate('/login') }
 
   return (
     <aside className={cx('w-64 shrink-0 flex-col border-r bg-card', className)}>

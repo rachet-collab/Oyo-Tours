@@ -16,6 +16,7 @@ const ROLES = [
     icon: 'boxes',
     name: 'Aarav Kapoor',
     email: 'admin@oyotours.in',
+    pass: 'Admin@oyo2026',
   },
   {
     key: 'operations',
@@ -24,6 +25,7 @@ const ROLES = [
     icon: 'plane',
     name: 'Rohan Desai',
     email: 'ops@oyotours.in',
+    pass: 'Ops@oyo2026',
   },
   {
     key: 'sales',
@@ -32,21 +34,29 @@ const ROLES = [
     icon: 'ticket',
     name: 'Priya Nair',
     email: 'sales@oyotours.in',
+    pass: 'Sales@oyo2026',
   },
 ]
 
 export default function Login() {
-  const { dispatch } = useApp()
+  const { login } = useApp()
   const navigate = useNavigate()
   const [role, setRole] = useState('admin')
   const active = ROLES.find((r) => r.key === role)
+  const [email, setEmail] = useState(active.email)
+  const [password, setPassword] = useState(active.pass)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
 
-  const signIn = (e) => {
+  // Selecting a role card prefills its demo credentials (still editable).
+  const pickRole = (r) => { setRole(r.key); setEmail(r.email); setPassword(r.pass); setError('') }
+
+  const signIn = async (e) => {
     e.preventDefault()
-    dispatch({
-      type: 'LOGIN',
-      user: { name: active.name, role: active.key, email: active.email },
-    })
+    setBusy(true); setError('')
+    const res = await login(email, password)
+    setBusy(false)
+    if (res?.error) { setError(res.error.message || 'Sign-in failed. Check your email and password.'); return }
     navigate('/')
   }
 
@@ -99,7 +109,7 @@ export default function Login() {
               <button
                 key={r.key}
                 type="button"
-                onClick={() => setRole(r.key)}
+                onClick={() => pickRole(r)}
                 className={cx(
                   'flex items-start gap-3 rounded-2xl border bg-card p-4 text-left transition-colors',
                   role === r.key ? 'border-primary ring-2 ring-ring/20' : 'hover:bg-muted',
@@ -131,19 +141,21 @@ export default function Login() {
 
           <form onSubmit={signIn} className="mt-6 grid gap-4">
             <Field label="Work email">
-              <Input value={active.email} readOnly />
+              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required />
             </Field>
             <Field label="Password">
-              <Input type="password" defaultValue="demo-portal" />
+              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
             </Field>
-            <Button type="submit" size="lg" className="mt-1 w-full">
-              Sign in as {active.title}
-              <Icon name="arrowRight" size={17} />
+            {error && (
+              <p className="rounded-lg border border-status-urgent/30 bg-status-urgent-bg/40 px-3 py-2 text-xs font-medium text-status-urgent">{error}</p>
+            )}
+            <Button type="submit" size="lg" className="mt-1 w-full" disabled={busy}>
+              {busy ? 'Signing in…' : <>Sign in as {active.title}<Icon name="arrowRight" size={17} /></>}
             </Button>
           </form>
 
           <p className="mt-5 text-center text-xs text-muted-foreground">
-            Prototype · any password works
+            Secure sign-in · roles enforced by the backend
           </p>
         </div>
       </div>

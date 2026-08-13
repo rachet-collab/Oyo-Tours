@@ -267,12 +267,10 @@ export default function Finance() {
                 </thead>
                 <tbody>
                   {pageRows.map((t) => (
-                    <tr key={t.id} className="border-t hover:bg-muted/40">
+                    <tr key={t.id} onClick={() => navigate(`/bookings/${t.id}`)} className="cursor-pointer border-t transition-colors hover:bg-muted/40">
                       <td className="px-5 py-3">
-                        <button type="button" onClick={() => navigate(`/bookings/${t.id}`)} className="text-left">
-                          <p className="font-mono text-xs font-semibold text-primary">{t.ref}</p>
-                          <p className="text-xs text-muted-foreground">{t.guest?.name || '—'} · {shortDate(t.createdAt)}</p>
-                        </button>
+                        <p className="font-mono text-xs font-semibold text-primary">{t.ref}</p>
+                        <p className="text-xs text-muted-foreground">{t.guest?.name || '—'} · {shortDate(t.createdAt)}</p>
                       </td>
                       <td className="px-3 py-3">
                         <p className="font-medium">{t.pkg?.destinationCity || '—'}</p>
@@ -293,12 +291,12 @@ export default function Finance() {
                           {t.approved ? (
                             <div className="text-right">
                               <Pill tone="won" dot>Approved</Pill>
-                              <p className="mt-1 text-[11px] text-muted-foreground">{t.approvedBy}{t.approvedAt ? ` · ${shortDate(t.approvedAt)}` : ''}</p>
+                              <p className="mt-1 text-[11px] text-muted-foreground">{t.approvedBy}{t.approvedAt ? ` · ${shortDate(String(t.approvedAt).slice(0, 10))}` : ''}</p>
                             </div>
                           ) : (
                             <>
                               <Pill tone="proposal" dot>Pending</Pill>
-                              <Button size="sm" icon="check" onClick={() => approveBookingPayment(t.id)}>Approve</Button>
+                              <Button size="sm" icon="check" onClick={(e) => { e.stopPropagation(); approveBookingPayment(t.id) }}>Approve</Button>
                             </>
                           )}
                         </div>

@@ -288,6 +288,15 @@ export const apiDeleteDeparture = (id) =>
   hasSupabase && supabase.from('departures').delete().eq('id', id).then(warn('delete departure'))
 export const apiInsertBooking = (b) =>
   hasSupabase && supabase.from('bookings').insert(bookingToDb(b)).then(warn('insert booking'))
+// Atomic, server-validated booking creation. The DB function locks the
+// departure + linked inventory and rejects overselling / past departures / etc.
+// Returns { booking } on success or { error: { message } }.
+export async function apiCreateBooking(booking) {
+  if (!hasSupabase) return { booking }
+  const { data, error } = await supabase.rpc('create_booking', { b: bookingToDb(booking) })
+  if (error) return { error: { message: error.message || 'Booking failed' } }
+  return { booking: data ? bookingFromDb(data) : booking }
+}
 // Upsert the FULL booking record (doc + flat columns). Every booking mutation
 // — status, cancellation/refund, traveller capture, approval — routes here so
 // nothing is lost. Replaces the old status-only writer.

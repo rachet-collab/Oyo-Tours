@@ -28,6 +28,7 @@ import {
   apiInsertDeparture,
   apiDeleteDeparture,
   apiInsertBooking,
+  apiCreateBooking,
   apiUpsertBooking,
   apiUpdateBookingStatus,
   apiUpdateDepartureSeats,
@@ -587,7 +588,7 @@ export function AppProvider({ children }) {
       dispatch({ type: 'DELETE_DEPARTURE', id })
       apiDeleteDeparture(id)
     }
-    const addBooking = (booking) => {
+    const addBooking = async (booking) => {
       const seats = totalPax(booking.pax)
       const agent = state.user
         ? `${state.user.name} (${roleLabel(state.user.role)})`
@@ -603,16 +604,19 @@ export function AppProvider({ children }) {
         history: [{ status: 'Processing', note: 'Booking created', by: agent, at: stamp() }],
         ...booking,
       }
-      dispatch({ type: 'ADD_BOOKING', booking: full })
-      apiUpsertBooking(full)
-      const dep = state.departures.find((d) => d.id === full.departureId)
-      if (dep) apiUpdateDepartureSeats(dep.id, dep.seatsBooked + seats)
-      // Persist the seat allocation + manifest rolled into the linked blocks.
-      ;[full.airlineInventoryId, full.hotelInventoryId].filter(Boolean).forEach((invId) => {
+      // Persist atomically & server-validated first — the DB rejects overselling,
+      // past/closed departures, etc. Only then reflect it locally.
+      const res = await apiCreateBooking(full)
+      if (res?.error) return { error: res.error }
+      const saved = res.booking || full
+      dispatch({ type: 'ADD_BOOKING', booking: saved })
+      // Roll captured names into the linked blocks' manifests (allocation counts
+      // are maintained by DB triggers, so we only persist the manifest here).
+      ;[saved.airlineInventoryId, saved.hotelInventoryId].filter(Boolean).forEach((invId) => {
         const inv = state.inventory.find((i) => i.id === invId)
-        if (inv) apiUpsertInventory(allocateInto(inv, full))
+        if (inv) apiUpsertInventory(resyncManifest(inv, saved, saved.travellerDetails, saved.travellerNames))
       })
-      return full
+      return { booking: saved }
     }
     // --- airline inventory ------------------------------------------------
     const inventoryView = state.inventory.map(computeInventory)
@@ -820,20 +824,8 @@ export function AppProvider({ children }) {
       // Persist the whole updated booking (status, note, proof metadata,
       // cancellation/refund object, history) — not just status.
       if (b) apiUpsertBooking(withStatus(b, { status, paymentNote, proof: proofMeta, cancellation: extra?.cancellation, by, at }))
-      if (b) {
-        const dep = state.departures.find((d) => d.id === b.departureId)
-        const wasC = b.status === 'Cancelled'
-        const nowC = status === 'Cancelled'
-        const invIds = [b.airlineInventoryId, b.hotelInventoryId].filter(Boolean)
-        if (dep && !wasC && nowC) {
-          apiUpdateDepartureSeats(dep.id, Math.max(0, dep.seatsBooked - b.seats))
-          // Return seats/rooms to the linked flight & hotel blocks.
-          invIds.forEach((id) => { const inv = state.inventory.find((i) => i.id === id); if (inv) apiUpsertInventory(deallocateFrom(inv, b)) })
-        } else if (dep && wasC && !nowC) {
-          apiUpdateDepartureSeats(dep.id, dep.seatsBooked + b.seats)
-          invIds.forEach((id) => { const inv = state.inventory.find((i) => i.id === id); if (inv) apiUpsertInventory(allocateInto(inv, b)) })
-        }
-      }
+      // Departure seats + inventory allocatedSeats are recomputed by DB triggers
+      // whenever the booking's status changes — no client-side count writes needed.
     }
 
     // Cancel a booking, tagging who initiated it (guest vs OYO/operator) and why.
@@ -876,8 +868,11 @@ export function AppProvider({ children }) {
 
     // Capture / update the traveller name list + details for a booking (e.g. to
     // complete the naming allocation before the travel/naming deadline).
-    const setBookingTravellers = (bookingId, details) => {
+    const setBookingTravellers = (bookingId, rawDetails) => {
       const b = state.bookings.find((x) => x.id === bookingId)
+      // Never capture more travellers than the booking has seats.
+      const cap = b?.seats ?? rawDetails.length
+      const details = rawDetails.slice(0, cap)
       const names = details.map((d) => `${d.firstName || ''} ${d.lastName || ''}`.trim()).filter(Boolean)
       const by = state.user ? `${state.user.name} (${roleLabel(state.user.role)})` : 'System'
       const at = stamp()

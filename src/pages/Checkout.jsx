@@ -97,6 +97,8 @@ export default function Checkout() {
   const [addOnQty, setAddOnQty] = useState({}) // add-on index -> quantity
   const [advanceNote, setAdvanceNote] = useState('') // advance payment reference (required to book)
   const [done, setDone] = useState(null)
+  const [booking, setBooking] = useState(false) // true while the booking is being created
+  const [bookErr, setBookErr] = useState('')
   const [depMonth, setDepMonth] = useState('') // travel-date month filter (YYYY-MM)
 
   const pkg = pkgId ? packageById(pkgId) : null
@@ -223,7 +225,9 @@ export default function Checkout() {
     if (i > 0) setStepKey(stepKeys[i - 1])
     else navigate(-1)
   }
-  const confirm = () => {
+  const confirm = async () => {
+    if (booking) return
+    setBookErr('')
     const forms = reconcile(guestForms)
     const names = forms.map((f) => `${f.firstName} ${f.lastName}`.trim()).filter(Boolean)
     const leadForm = forms[0] || emptyForm()
@@ -234,7 +238,8 @@ export default function Checkout() {
       city: '',
       passportNo: leadForm.passportNo || '',
     }).id
-    const b = addBooking({
+    setBooking(true)
+    const res = await addBooking({
       guestId: gid, packageId: pkgId, departureId, category, pax, amount,
       advanceAmount: advanceDue,
       advancePaid: advanceDue > 0,
@@ -256,7 +261,9 @@ export default function Checkout() {
       hotelInventoryId: linkedInv.hotel?.id,
       travellerNames: names,
     })
-    setDone({ ...b, leadName: leadName || 'your guest' })
+    setBooking(false)
+    if (res?.error) { setBookErr(res.error.message || 'Could not create the booking. Please try again.'); return }
+    setDone({ ...res.booking, leadName: leadName || 'your guest' })
   }
 
   /* --------------------------------------------------- confirmation --- */
@@ -688,12 +695,17 @@ export default function Checkout() {
               )}
             </div>
 
+            {bookErr && stepKey === 'review' && (
+              <div className="mx-6 mt-3 flex items-center gap-2 rounded-xl border border-status-urgent/30 bg-status-urgent-bg/40 px-3 py-2 text-sm text-status-urgent">
+                <Icon name="info" size={16} /> {bookErr}
+              </div>
+            )}
             <div className="flex items-center justify-between border-t bg-muted/30 px-6 py-4">
               <Button variant="ghost" onClick={back}>{idx === 0 ? 'Cancel' : 'Back'}</Button>
               {stepKey !== 'review' ? (
                 <Button disabled={!canNext} onClick={next}>Continue <Icon name="arrowRight" size={16} /></Button>
               ) : (
-                <Button icon="check" disabled={!advanceOk} onClick={confirm}>Confirm & book</Button>
+                <Button icon="check" disabled={!advanceOk || booking} onClick={confirm}>{booking ? 'Booking…' : 'Confirm & book'}</Button>
               )}
             </div>
           </Card>

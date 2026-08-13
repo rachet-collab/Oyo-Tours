@@ -6,7 +6,7 @@ import { Button, Card, Eyebrow, Input, Modal, Pill, SeatMeter } from '../compone
 import InventoryImage from '../components/InventoryImage.jsx'
 import { useApp } from '../store/AppStore.jsx'
 import { INV_STATUS_TONE, INVENTORY_LABELS, OCCUPANCY } from '../store/data.js'
-import { inr, shortDate } from '../lib/format.js'
+import { inr, shortDate, timeLabel, flightDuration } from '../lib/format.js'
 import { blockCities, hotelOptionsForCity, travellersForBlock, downloadRooming } from '../lib/rooming.js'
 
 const cx = (...c) => c.filter(Boolean).join(' ')
@@ -245,8 +245,8 @@ export default function InventoryDetail() {
 
             <div className="px-5 pb-5 pt-4">
               <div className="grid grid-cols-2 gap-4 rounded-xl border p-4 sm:grid-cols-4">
-                <Metric label={L.anchor} value={shortDate(inv.departureDate)} icon="calendar" />
-                <Metric label={L.ret} value={inv.returnDate ? shortDate(inv.returnDate) : '—'} icon="calendar" />
+                <Metric label={L.anchor} value={shortDate(inv.departureDate) + (inv.departTime ? ` · ${timeLabel(inv.departTime)}` : '')} icon="calendar" />
+                <Metric label={L.ret} value={inv.returnDate ? shortDate(inv.returnDate) + (inv.returnDepartTime ? ` · ${timeLabel(inv.returnDepartTime)}` : '') : '—'} icon="calendar" />
                 <Metric label={L.from} value={inv.departureCity} icon="mapPin" small />
                 <Metric label={L.to} value={inv.arrivalCity} icon="mapPin" small />
               </div>
@@ -261,6 +261,7 @@ export default function InventoryDetail() {
                     tag="Outbound" inv={inv} date={inv.departureDate}
                     airline={inv.airline} flightNo={inv.flightNo}
                     fromCity={inv.departureCity} toCity={inv.arrivalCity}
+                    depTime={inv.departTime} arrTime={inv.arriveTime}
                   />
                   <div className="relative border-t">
                     <div className="absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center">
@@ -271,6 +272,7 @@ export default function InventoryDetail() {
                     tag="Return" inv={inv} date={inv.returnDate}
                     airline={inv.returnAirline || inv.airline} flightNo={inv.returnFlightNo || inv.flightNo}
                     fromCity={inv.arrivalCity} toCity={inv.departureCity}
+                    depTime={inv.returnDepartTime} arrTime={inv.returnArriveTime}
                   />
                 </div>
               )}
@@ -610,9 +612,10 @@ function GuestProfileModal({ person, type, onClose, onBooking }) {
 }
 
 // A single boarding-pass style flight leg (departure → arrival) for the itinerary.
-function FlightLeg({ tag, inv, date, fromCity, toCity, airline, flightNo }) {
+function FlightLeg({ tag, inv, date, fromCity, toCity, airline, flightNo, depTime, arrTime }) {
   const carrier = airline || inv.airline
   const fltNo = flightNo || inv.flightNo
+  const dur = flightDuration(depTime, arrTime)
   // Use the uploaded logo only when this leg is the record's primary airline.
   const legImg = carrier === inv.airline ? inv.imageUrl : undefined
   return (
@@ -634,10 +637,14 @@ function FlightLeg({ tag, inv, date, fromCity, toCity, airline, flightNo }) {
         <div className="min-w-0">
           <p className="text-2xl font-semibold leading-none tracking-tight">{cityCode(fromCity)}</p>
           <p className="mt-1.5 truncate text-xs text-muted-foreground">{cityName(fromCity)}</p>
+          {depTime && <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{timeLabel(depTime)}</p>}
         </div>
         <div className="flex flex-1 flex-col items-center px-1">
+          {dur && <p className="mb-1 text-[11px] font-medium text-muted-foreground">{dur}</p>}
           <div className="flex w-full items-center">
             <span className="h-1.5 w-1.5 rounded-full bg-primary/70" />
+            <div className="flex-1 border-t border-dashed border-border" />
+            <Icon name="plane" size={12} className="mx-1 shrink-0 text-muted-foreground" />
             <div className="flex-1 border-t border-dashed border-border" />
             <span className="h-1.5 w-1.5 rounded-full bg-border" />
           </div>
@@ -645,6 +652,7 @@ function FlightLeg({ tag, inv, date, fromCity, toCity, airline, flightNo }) {
         <div className="min-w-0 text-right">
           <p className="text-2xl font-semibold leading-none tracking-tight">{cityCode(toCity)}</p>
           <p className="mt-1.5 truncate text-xs text-muted-foreground">{cityName(toCity)}</p>
+          {arrTime && <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{timeLabel(arrTime)}</p>}
         </div>
       </div>
     </div>

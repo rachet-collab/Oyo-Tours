@@ -16,9 +16,13 @@ const COLUMNS = {
     { key: 'sector', label: 'Sector', req: true, hint: 'e.g. DEL-IXZ' },
     { key: 'flightNo', label: 'Flight Details', req: true, hint: 'e.g. AI 2937' },
     { key: 'departureDate', label: 'Departure Date', date: true, req: true },
+    { key: 'departTime', label: 'Departure Time', time: true, hint: 'e.g. 09:15' },
+    { key: 'arriveTime', label: 'Arrival Time', time: true, hint: 'e.g. 11:40' },
     { key: 'returnSector', label: 'Return Sector', hint: 'e.g. IXZ-DEL' },
     { key: 'returnFlightNo', label: 'Return Flight Details', hint: 'e.g. AI 2936' },
     { key: 'returnDate', label: 'Return Departure Date', date: true },
+    { key: 'returnDepartTime', label: 'Return Departure Time', time: true, hint: 'e.g. 12:30' },
+    { key: 'returnArriveTime', label: 'Return Arrival Time', time: true, hint: 'e.g. 15:05' },
     { key: 'totalSeats', label: 'Seats', num: true, req: true },
     { key: 'status', label: 'Status' },
     { key: 'packageRef', label: 'Package' },
@@ -56,6 +60,10 @@ const ALIASES = {
   to: 'arrivalCity', tocity: 'arrivalCity', property: 'arrivalCity', properties: 'arrivalCity', arrivalcity: 'arrivalCity', hotelname: 'arrivalCity', hotel: 'arrivalCity', hotels: 'arrivalCity', options: 'arrivalCity', hoteloptions: 'arrivalCity',
   departuredate: 'departureDate', departure: 'departureDate', checkin: 'departureDate', checkindate: 'departureDate', date: 'departureDate', traveldate: 'departureDate',
   returndate: 'returnDate', return: 'returnDate', checkout: 'returnDate', checkoutdate: 'returnDate',
+  departuretime: 'departTime', deptime: 'departTime', departtime: 'departTime', outbounddeparturetime: 'departTime', std: 'departTime',
+  arrivaltime: 'arriveTime', arrtime: 'arriveTime', outboundarrivaltime: 'arriveTime', sta: 'arriveTime',
+  returndeparturetime: 'returnDepartTime', returndeptime: 'returnDepartTime', returnstd: 'returnDepartTime',
+  returnarrivaltime: 'returnArriveTime', returnarrtime: 'returnArriveTime', returnsta: 'returnArriveTime',
   nights: 'nights',
   totalseats: 'totalSeats', seats: 'totalSeats', totalrooms: 'totalSeats', rooms: 'totalSeats', qty: 'totalSeats', quantity: 'totalSeats',
   seatcost: 'seatCost', roomcost: 'seatCost', cost: 'seatCost', price: 'seatCost', rate: 'seatCost', costperseat: 'seatCost', costperroom: 'seatCost',
@@ -102,6 +110,24 @@ function toISO(v) {
   return isNaN(d) ? s : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 const validISO = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s)
+
+// Normalise any time cell (JS Date, Excel time serial 0–1, "9:15", "9:15 AM") → "HH:MM" 24h.
+function toTime(v) {
+  if (v == null || v === '') return ''
+  if (v instanceof Date && !isNaN(v)) return `${pad(v.getHours())}:${pad(v.getMinutes())}`
+  if (typeof v === 'number' && v >= 0 && v < 1) {
+    const mins = Math.round(v * 1440)
+    return `${pad(Math.floor(mins / 60) % 24)}:${pad(mins % 60)}`
+  }
+  const s = String(v).trim()
+  const m = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i)
+  if (m) {
+    let h = Number(m[1]); const min = m[2]
+    if (m[3]) { const pm = /pm/i.test(m[3]); if (pm && h < 12) h += 12; if (!pm && h === 12) h = 0 }
+    return `${pad(h % 24)}:${min}`
+  }
+  return s
+}
 
 // Read any supported source into a 2-D array of rows (header row first).
 function sheetToRows(input, kind) {
@@ -169,6 +195,7 @@ export default function InventoryImport({ type = 'airline', open, onClose, asPag
         cols.forEach((c) => {
           let v = get(row, c.key)
           if (c.date) v = toISO(v)
+          else if (c.time) v = toTime(v)
           else if (c.num) v = num(v)
           else if (c.bool) v = truthy(v)
           else v = String(v ?? '').trim()
@@ -287,6 +314,8 @@ export default function InventoryImport({ type = 'airline', open, onClose, asPag
           returnFlightNo: String(rec.returnFlightNo || '').toUpperCase(),
           departureCity: from, arrivalCity: to, sector: `${cityCode(from)} → ${cityCode(to)}`,
           departureDate: rec.departureDate, returnDate: rec.returnDate || rec.departureDate,
+          departTime: rec.departTime || '', arriveTime: rec.arriveTime || '',
+          returnDepartTime: rec.returnDepartTime || '', returnArriveTime: rec.returnArriveTime || '',
           totalSeats: Math.max(0, rec.totalSeats || 0),
           status: INVENTORY_STATUSES.includes(rowStatus) ? rowStatus : 'Active',
           vendors: vlist,
@@ -361,8 +390,8 @@ export default function InventoryImport({ type = 'airline', open, onClose, asPag
   // Template with a couple of sample rows (column order matches COLUMNS).
   const SAMPLE = {
     airline: [
-      ['', 'DEL-IXZ', 'AI 2937', '2026-10-02', 'IXZ-DEL', 'AI 2936', '2026-10-07', 12, 'Active', '', 'Festive block'],
-      ['', 'BOM-BKK', '6E 1407', '2026-11-18', 'BKK-BOM', '6E 1408', '2026-11-23', 30, 'Active', '', ''],
+      ['', 'DEL-IXZ', 'AI 2937', '2026-10-02', '09:15', '11:40', 'IXZ-DEL', 'AI 2936', '2026-10-07', '12:30', '15:05', 12, 'Active', '', 'Festive block'],
+      ['', 'BOM-BKK', '6E 1407', '2026-11-18', '13:05', '17:20', 'BKK-BOM', '6E 1408', '2026-11-23', '18:10', '21:30', 30, 'Active', '', ''],
     ],
     hotel: [
       ['Andaman', 'Port Blair', 'Deluxe', 'Blue Mmerlin / J Hotel / similar', 50, '2026-12-05', '2026-12-07', 'PKG-1002', 'Active', ''],

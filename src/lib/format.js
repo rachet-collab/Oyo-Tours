@@ -21,6 +21,18 @@ export const dayMonth = (iso) => {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
 }
 
+// "HH:MM" (24h) → "2:30 PM". Returns '' for blank/invalid input.
+export const timeLabel = (t) => {
+  if (!t) return ''
+  const m = String(t).match(/^(\d{1,2}):(\d{2})/)
+  if (!m) return ''
+  let h = Number(m[1])
+  const min = m[2]
+  const ap = h >= 12 ? 'PM' : 'AM'
+  h = h % 12 || 12
+  return `${h}:${min} ${ap}`
+}
+
 // Duration between two "HH:MM" strings; wraps past midnight for overnight legs.
 export const flightDuration = (dep, arr) => {
   if (!dep || !arr) return ''

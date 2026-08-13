@@ -6,7 +6,7 @@ import { Button, Card, Chip, FilterTabs, Input, Modal, Pagination, Pill, SeatMet
 import InventoryImage from '../components/InventoryImage.jsx'
 import DeleteIcon from '../components/ui/DeleteIcon.jsx'
 import { useApp } from '../store/AppStore.jsx'
-import { shortDate } from '../lib/format.js'
+import { shortDate, timeLabel } from '../lib/format.js'
 
 const cx = (...c) => c.filter(Boolean).join(' ')
 const MONTHS_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -280,8 +280,8 @@ export default function InventoryList({ type = 'airline' }) {
                           )}
                         </td>
                         <td>
-                          <p className="font-medium">{shortDate(i.departureDate)}</p>
-                          <p className="text-xs text-muted-foreground">→ {shortDate(i.returnDate) || '—'}</p>
+                          <p className="font-medium">{shortDate(i.departureDate)}{i.departTime ? <span className="font-normal text-muted-foreground"> · {timeLabel(i.departTime)}</span> : null}</p>
+                          <p className="text-xs text-muted-foreground">→ {shortDate(i.returnDate) || '—'}{i.returnDepartTime ? ` · ${timeLabel(i.returnDepartTime)}` : ''}</p>
                           {hot && <p className="mt-0.5 text-xs font-semibold text-status-urgent">Release in {Math.max(0, i.releaseDaysLeft)}d</p>}
                         </td>
                         <td>

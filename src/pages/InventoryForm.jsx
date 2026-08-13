@@ -50,6 +50,10 @@ export default function InventoryForm({ type: typeProp = 'airline' }) {
     returnFlightNo: existing?.returnFlightNo || '',
     departureDate: existing?.departureDate || '',
     returnDate: existing?.returnDate || '',
+    departTime: existing?.departTime || '',
+    arriveTime: existing?.arriveTime || '',
+    returnDepartTime: existing?.returnDepartTime || '',
+    returnArriveTime: existing?.returnArriveTime || '',
     category: existing?.category || '',
     priceAdult: existing?.pricing?.adult ?? '',
     priceExtraBed: existing?.pricing?.extraBed ?? '',
@@ -206,6 +210,11 @@ export default function InventoryForm({ type: typeProp = 'airline' }) {
       returnFlightNo: type === 'airline' ? (form.returnFlightNo || '').toUpperCase() : '',
       departureDate: form.departureDate,
       returnDate: form.returnDate || form.departureDate,
+      // Flight times (blank for hotels).
+      departTime: type === 'airline' ? (form.departTime || '') : '',
+      arriveTime: type === 'airline' ? (form.arriveTime || '') : '',
+      returnDepartTime: type === 'airline' ? (form.returnDepartTime || '') : '',
+      returnArriveTime: type === 'airline' ? (form.returnArriveTime || '') : '',
       totalSeats: Math.max(0, Number(form.totalSeats) || 0),
       allocatedSeats: Math.max(0, Number(form.allocatedSeats) || 0),
       namesCaptured: Math.max(0, Number(form.namesCaptured) || 0),
@@ -361,6 +370,26 @@ export default function InventoryForm({ type: typeProp = 'airline' }) {
               )}
               <Field label={L.anchor} required><Input type="date" value={form.departureDate} onChange={set('departureDate')} /></Field>
               <Field label={L.ret}><Input type="date" value={form.returnDate} onChange={set('returnDate')} /></Field>
+              {type === 'airline' && (
+                <Field label="Outbound departure time" hint="Local departure time.">
+                  <Input type="time" value={form.departTime} onChange={set('departTime')} />
+                </Field>
+              )}
+              {type === 'airline' && (
+                <Field label="Outbound arrival time" hint="Local arrival time.">
+                  <Input type="time" value={form.arriveTime} onChange={set('arriveTime')} />
+                </Field>
+              )}
+              {type === 'airline' && (
+                <Field label="Return departure time">
+                  <Input type="time" value={form.returnDepartTime} onChange={set('returnDepartTime')} />
+                </Field>
+              )}
+              {type === 'airline' && (
+                <Field label="Return arrival time">
+                  <Input type="time" value={form.returnArriveTime} onChange={set('returnArriveTime')} />
+                </Field>
+              )}
               {type === 'airline' && (
                 <Field label="Return airline" hint="Defaults to the outbound airline.">
                   <Select value={form.returnAirline} onChange={(e) => setForm((f) => ({ ...f, returnAirline: e.target.value }))}>

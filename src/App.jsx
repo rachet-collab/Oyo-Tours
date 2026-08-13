@@ -22,6 +22,7 @@ const InventoryForm = lazy(() => import('./pages/InventoryForm.jsx'))
 const BulkUpload = lazy(() => import('./pages/BulkUpload.jsx'))
 const Airlines = lazy(() => import('./pages/Airlines.jsx'))
 const Finance = lazy(() => import('./pages/Finance.jsx'))
+const FinanceAnalytics = lazy(() => import('./pages/FinanceAnalytics.jsx'))
 const Vendors = lazy(() => import('./pages/Vendors.jsx'))
 const Operations = lazy(() => import('./pages/Operations.jsx'))
 
@@ -65,6 +66,7 @@ export default function App() {
             {/* Ops back-office — Admin & Operations */}
             <Route path="/overview" element={<Navigate to="/inventory" replace />} />
             <Route path="/finance" element={<RequireRole roles={['admin', 'operations']}><Finance /></RequireRole>} />
+            <Route path="/finance/analytics" element={<RequireRole roles={['admin', 'operations']}><FinanceAnalytics /></RequireRole>} />
             <Route path="/operations" element={<RequireRole roles={['admin', 'operations']}><Operations /></RequireRole>} />
 
             {/* Inventory — Admin & Operations (airline seat blocks + hotel room blocks in one view) */}

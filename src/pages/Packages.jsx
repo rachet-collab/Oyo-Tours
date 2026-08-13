@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import TopBar from '../components/layout/TopBar.jsx'
 import Icon from '../components/ui/Icon.jsx'
@@ -16,9 +16,6 @@ import {
 import { useApp } from '../store/AppStore.jsx'
 import { inr } from '../lib/format.js'
 import { downloadPackageQuote } from '../lib/packageQuote.js'
-// Bulk-upload modal pulls in XLSX — load it only when actually opened so the
-// Packages landing page stays lightweight.
-const PackageImport = lazy(() => import('./PackageImport.jsx'))
 
 const cx = (...c) => c.filter(Boolean).join(' ')
 const MONTHS_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -54,7 +51,6 @@ export default function Packages() {
   const [destCity, setDestCity] = useState('')
   const [month, setMonth] = useState('')
   const [life, setLife] = useState('active') // admin lifecycle filter
-  const [importOpen, setImportOpen] = useState(false)
   const role = user?.role
   const isAdmin = role === 'admin'
   const isSales = role === 'sales' // sales gets the explore/book storefront
@@ -134,12 +130,7 @@ export default function Packages() {
           </Button>
         )}
         {isAdmin && (
-          <Button variant="outline" icon="upload" className="ml-auto" onClick={() => setImportOpen(true)}>
-            Bulk upload
-          </Button>
-        )}
-        {isAdmin && (
-          <Button icon="plus" onClick={() => navigate('/packages/new')}>
+          <Button icon="plus" className="ml-auto" onClick={() => navigate('/packages/new')}>
             Add package
           </Button>
         )}
@@ -247,12 +238,6 @@ export default function Packages() {
           )
         })}
       </div>
-
-      {importOpen && (
-        <Suspense fallback={null}>
-          <PackageImport open={importOpen} onClose={() => setImportOpen(false)} />
-        </Suspense>
-      )}
     </>
   )
 }

@@ -184,6 +184,13 @@ const resyncManifest = (inv, booking, details, names) => ({
   ...inv,
   manifest: [...(inv.manifest || []).filter((m) => m.bookingId !== booking.id), ...manifestEntries(booking, details, names)],
 })
+// Reverse of allocateInto: return a booking's seats/rooms to the block and drop
+// its manifest entries (used when a booking is cancelled).
+const deallocateFrom = (inv, booking) => ({
+  ...inv,
+  allocatedSeats: Math.max(0, (inv.allocatedSeats || 0) - (booking.seats || 0)),
+  manifest: (inv.manifest || []).filter((m) => m.bookingId !== booking.id),
+})
 
 function reducer(state, action) {
   switch (action.type) {
@@ -290,8 +297,25 @@ function reducer(state, action) {
 
     case 'SET_BOOKING_STATUS': {
       const { bookingId, status, paymentNote, proof, cancellation, by, at } = action
+      const bk = state.bookings.find((x) => x.id === bookingId)
+      const wasC = bk?.status === 'Cancelled'
+      const nowC = status === 'Cancelled'
+      const invIds = [bk?.airlineInventoryId, bk?.hotelInventoryId].filter(Boolean)
+      // Cancelling returns the seats/rooms to inventory + the departure; a rare
+      // un-cancel re-allocates them.
+      let departures = state.departures
+      let inventory = state.inventory
+      if (bk && !wasC && nowC) {
+        departures = departures.map((d) => (d.id === bk.departureId ? { ...d, seatsBooked: Math.max(0, d.seatsBooked - bk.seats) } : d))
+        inventory = inventory.map((i) => (invIds.includes(i.id) ? deallocateFrom(i, bk) : i))
+      } else if (bk && wasC && !nowC) {
+        departures = departures.map((d) => (d.id === bk.departureId ? { ...d, seatsBooked: d.seatsBooked + bk.seats } : d))
+        inventory = inventory.map((i) => (invIds.includes(i.id) ? allocateInto(i, bk) : i))
+      }
       return {
         ...state,
+        departures,
+        inventory,
         bookings: state.bookings.map((x) =>
           x.id === bookingId ? withStatus(x, { status, paymentNote, proof, cancellation, by, at }) : x),
       }
@@ -419,20 +443,27 @@ export function AppProvider({ children }) {
     // options) is nested under `cities`, shown when you open the block.
     const autoInventoryFromHotels = (pkg) => {
       const byCity = {}
-      let blockRooms = 0
       ;(pkg.hotels || []).forEach((cat) => {
         ;(cat.rows || []).forEach((row) => {
           const city = String(row.city || '').trim()
           if (!city) return
           const k = city.toLowerCase()
-          if (!byCity[k]) byCity[k] = { city, rooms: 0, hotels: [], categories: [] }
+          if (!byCity[k]) byCity[k] = { city, rooms: 0, roomsByCategory: {}, hotels: [], categories: [] }
           const rooms = Math.max(0, Number(row.rooms) || 0)
-          if (rooms > byCity[k].rooms) byCity[k].rooms = rooms
-          if (rooms > blockRooms) blockRooms = rooms // one block for the group
           if (row.options) byCity[k].hotels.push(String(row.options).trim())
-          if (cat.category && !byCity[k].categories.includes(cat.category)) byCity[k].categories.push(cat.category)
+          if (cat.category && !byCity[k].categories.includes(cat.category)) {
+            byCity[k].categories.push(cat.category)
+            // Rooms are bifurcated per category; the city total is their sum.
+            byCity[k].roomsByCategory[cat.category] = rooms
+          }
         })
       })
+      // Finalise each city's total = sum of its per-category rooms.
+      Object.values(byCity).forEach((c) => {
+        c.rooms = Object.values(c.roomsByCategory).reduce((s, n) => s + (Number(n) || 0), 0)
+      })
+      // One block for the group: the per-city total (max across cities).
+      const blockRooms = Object.values(byCity).reduce((m, c) => Math.max(m, c.rooms), 0)
       const cities = Object.values(byCity)
       if (!cities.length) return
       const dest = pkg.destinationCity || 'Destination'
@@ -793,10 +824,15 @@ export function AppProvider({ children }) {
         const dep = state.departures.find((d) => d.id === b.departureId)
         const wasC = b.status === 'Cancelled'
         const nowC = status === 'Cancelled'
-        if (dep && !wasC && nowC)
+        const invIds = [b.airlineInventoryId, b.hotelInventoryId].filter(Boolean)
+        if (dep && !wasC && nowC) {
           apiUpdateDepartureSeats(dep.id, Math.max(0, dep.seatsBooked - b.seats))
-        else if (dep && wasC && !nowC)
+          // Return seats/rooms to the linked flight & hotel blocks.
+          invIds.forEach((id) => { const inv = state.inventory.find((i) => i.id === id); if (inv) apiUpsertInventory(deallocateFrom(inv, b)) })
+        } else if (dep && wasC && !nowC) {
           apiUpdateDepartureSeats(dep.id, dep.seatsBooked + b.seats)
+          invIds.forEach((id) => { const inv = state.inventory.find((i) => i.id === id); if (inv) apiUpsertInventory(allocateInto(inv, b)) })
+        }
       }
     }
 

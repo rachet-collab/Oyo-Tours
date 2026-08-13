@@ -300,12 +300,15 @@ export default function InventoryDetail() {
                       <span className="text-sm font-bold">{c.city}</span>
                       <span className="ml-auto rounded-lg bg-muted px-2.5 py-1 text-sm font-bold tabular-nums">{c.rooms ?? inv.totalSeats} <span className="text-xs font-medium text-muted-foreground">rooms</span></span>
                     </div>
-                    {/* Part 2 — bifurcation by category */}
+                    {/* Part 2 — bifurcation by category (rooms + hotel options) */}
                     <div className="grid gap-2 border-t pt-3">
                       {(c.categories || []).map((cat, k) => (
                         <div key={cat} className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-3">
-                          <span className="sm:w-32 shrink-0">
+                          <span className="flex shrink-0 items-center gap-2 sm:w-44">
                             <Pill tone={cat === 'Super Deluxe' ? 'proposal' : 'neutral'}>{cat}</Pill>
+                            {c.roomsByCategory && c.roomsByCategory[cat] != null && (
+                              <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-bold tabular-nums">{c.roomsByCategory[cat]} <span className="font-medium text-muted-foreground">rm</span></span>
+                            )}
                           </span>
                           <span className="text-sm text-muted-foreground">{(c.hotels && c.hotels[k]) || '—'}</span>
                         </div>

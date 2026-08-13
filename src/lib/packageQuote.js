@@ -1,4 +1,12 @@
-import { inr, shortDate } from './format.js'
+import { inr, shortDate, timeLabel } from './format.js'
+
+// "DEL→IXZ AI 2937 (09:15–11:40)" — flight line with times when available.
+const legLine = (leg) => {
+  if (!leg) return ''
+  const route = `${leg.from || ''}→${leg.to || ''}`.replace(/^→$/, '')
+  const t = leg.departTime || leg.arriveTime ? ` (${timeLabel(leg.departTime) || '—'}–${timeLabel(leg.arriveTime) || '—'})` : ''
+  return `${route} ${leg.flightNo || ''}${t}`.trim()
+}
 
 const OCC = [
   ['adult', 'Per Adult (twin sharing)'],
@@ -30,7 +38,7 @@ export function buildPackageQuoteHtml(pkg, deps = []) {
   }).join('')
 
   const depRows = deps.length
-    ? deps.map((d) => `<tr><td>${esc(shortDate(d.date))} → ${esc(shortDate(d.returnDate))}</td><td>${esc(d.outbound?.from || '')}→${esc(d.outbound?.to || '')} ${esc(d.outbound?.flightNo || '')}</td><td class="num">${d.seatsTotal ?? ''}</td></tr>`).join('')
+    ? deps.map((d) => `<tr><td>${esc(shortDate(d.date))} → ${esc(shortDate(d.returnDate))}</td><td>${esc(legLine(d.outbound))}<br/><span class="muted">${esc(legLine(d.inbound))}</span></td><td class="num">${d.seatsTotal ?? ''}</td></tr>`).join('')
     : '<tr><td colspan="3" class="muted">Departures on request.</td></tr>'
 
   const hotelsHtml = (pkg.hotels || []).length
@@ -209,7 +217,7 @@ export function buildGuestQuoteHtml(pkg, sel = {}) {
 
   const travelWindow = departure ? `${esc(shortDate(departure.date))} → ${esc(shortDate(departure.returnDate))}` : 'On request'
   const flightLine = departure
-    ? `${esc(departure.outbound?.from || '')}→${esc(departure.outbound?.to || '')} ${esc(departure.outbound?.flightNo || '')} · ${esc(departure.inbound?.from || '')}→${esc(departure.inbound?.to || '')} ${esc(departure.inbound?.flightNo || '')}`
+    ? `${esc(legLine(departure.outbound))} · ${esc(legLine(departure.inbound))}`
     : ''
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"/>

@@ -248,15 +248,18 @@ export default function PackageForm() {
       ...h,
       rows: (h.rows || []).map((r) => (String(r.city || '').trim().toLowerCase() === city.toLowerCase() ? { ...r, rooms: val } : r)),
     })))
-  // A single "rooms per city" figure applied uniformly to every city.
-  const allCityRooms = () => {
-    const cities = uniqueHotelCities()
-    if (!cities.length) return ''
-    const vals = cities.map((c) => cityRooms(c))
-    return vals.every((v) => String(v) === String(vals[0])) ? (vals[0] ?? '') : ''
+  // Rooms are bifurcated by CATEGORY and applied per city: e.g. Deluxe 70 +
+  // Super Deluxe 30 → 100 rooms in every city. Read/write the rooms figure for
+  // a whole category (kept in sync across all its city rows).
+  const categoryRooms = (cat) => {
+    const row = (hotels.find((h) => h.category === cat)?.rows || []).find((r) => r.rooms !== '' && r.rooms != null)
+    return row ? row.rooms : ''
   }
-  const setAllCityRooms = (val) =>
-    setHotels((hs) => hs.map((h) => ({ ...h, rows: (h.rows || []).map((r) => ({ ...r, rooms: val })) })))
+  const setCategoryRooms = (cat, val) =>
+    setHotels((hs) => hs.map((h) => (h.category === cat ? { ...h, rows: (h.rows || []).map((r) => ({ ...r, rooms: val })) } : h)))
+  // Total rooms per city = sum of every selected category's per-city rooms.
+  const totalRoomsPerCity = () =>
+    categories.reduce((s, c) => s + (Number(categoryRooms(c)) || 0), 0)
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
   const toggleCat = (c) =>
@@ -593,16 +596,28 @@ export default function PackageForm() {
               )}
             </Card>
 
-            {/* Rooms per city — the hotel inventory quantity for each city */}
-            {uniqueHotelCities().length > 0 && (
+            {/* Rooms per city — bifurcated by category, applied to every city */}
+            {uniqueHotelCities().length > 0 && categories.length > 0 && (
               <Card className="p-6">
-                <SectionHead icon="boxes" title="Rooms per city" hint="One room block applied to every city. This is your hotel inventory for the destination." />
-                <div className="flex items-center gap-3 rounded-xl border p-3 sm:max-w-sm">
-                  <div className="w-28">
-                    <Input type="number" min="0" value={allCityRooms()} placeholder="0" onChange={(e) => setAllCityRooms(e.target.value)} />
+                <SectionHead icon="boxes" title="Rooms per city" hint="Split the room block by category — applies to every city. e.g. Deluxe 70 + Super Deluxe 30 = 100 rooms per city." />
+                <div className="grid gap-2 sm:max-w-md">
+                  {categories.map((cat) => (
+                    <div key={cat} className="flex items-center gap-3 rounded-xl border p-3">
+                      <span className="flex-1">
+                        <Pill tone={cat === 'Super Deluxe' ? 'proposal' : 'neutral'}>{cat}</Pill>
+                      </span>
+                      <div className="w-28">
+                        <Input type="number" min="0" value={categoryRooms(cat)} placeholder="0" onChange={(e) => setCategoryRooms(cat, e.target.value)} />
+                      </div>
+                      <span className="text-xs text-muted-foreground">rooms</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2.5">
+                    <span className="text-sm font-semibold">Total per city</span>
+                    <span className="text-sm font-bold tabular-nums">{totalRoomsPerCity()} <span className="font-medium text-muted-foreground">rooms</span></span>
                   </div>
-                  <span className="text-sm text-muted-foreground">rooms per city · applies to {uniqueHotelCities().join(', ')}</span>
                 </div>
+                <p className="mt-2 text-xs text-muted-foreground">Applies to {uniqueHotelCities().join(', ')}.</p>
               </Card>
             )}
           </div>
@@ -984,8 +999,8 @@ function DeparturesEditor({ view = 'departures', cats, deps, setDeps, existingDe
     seatsTotal: String(inv.available || inv.totalSeats || ''),
     airlineInventoryId: inv.id,
     hotelInventoryId: '',
-    outbound: { from: codeOf(inv.departureCity), to: codeOf(inv.arrivalCity), airline: inv.airline, flightNo: inv.flightNo },
-    inbound: { from: codeOf(inv.arrivalCity), to: codeOf(inv.departureCity), airline: inv.returnAirline || inv.airline, flightNo: inv.returnFlightNo || inv.flightNo },
+    outbound: { from: codeOf(inv.departureCity), to: codeOf(inv.arrivalCity), airline: inv.airline, flightNo: inv.flightNo, departTime: inv.departTime || '', arriveTime: inv.arriveTime || '' },
+    inbound: { from: codeOf(inv.arrivalCity), to: codeOf(inv.departureCity), airline: inv.returnAirline || inv.airline, flightNo: inv.returnFlightNo || inv.flightNo, departTime: inv.returnDepartTime || '', arriveTime: inv.returnArriveTime || '' },
     pricing: Object.fromEntries(cats.map((c) => [c, Object.fromEntries(OCCUPANCY.map((o) => [o.key, '']))])),
   })
   const addSelected = () => {

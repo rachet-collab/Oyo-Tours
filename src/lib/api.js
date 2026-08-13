@@ -37,6 +37,20 @@ export async function authSignOut() {
   if (hasSupabase) await supabase.auth.signOut()
 }
 
+// Admin user management via the secure `admin-users` edge function (service
+// role, gated to admin callers). Actions: list, create_user, set_password,
+// set_role, delete_user.
+export async function adminUsers(body) {
+  if (!hasSupabase) return { error: { message: 'No backend configured' } }
+  const { data, error } = await supabase.functions.invoke('admin-users', { body })
+  if (error) {
+    let message = error.message || 'Request failed'
+    try { const j = await error.context?.json?.(); if (j?.error) message = j.error } catch { /* ignore */ }
+    return { error: { message } }
+  }
+  return data
+}
+
 // Subscribe to auth changes; returns an unsubscribe function.
 export function onAuthChange(cb) {
   if (!hasSupabase) return () => {}

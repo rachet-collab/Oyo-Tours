@@ -127,10 +127,16 @@ const guestToDb = (g) => ({
 const bookingFromDb = (r) => {
   // Reconstruct the cancellation object only if any cancel/refund field is set.
   const hasCancel = r.cancel_type || r.cancel_at || r.refund_status || r.refund_amount != null
+  // The booking amount (advance) is non-refundable; only what was collected above
+  // it is refundable. Derived here so it survives reload without extra columns.
+  const _collected = r.cancel_amount_paid != null ? Number(r.cancel_amount_paid) : 0
+  const _nonRefundable = r.advance_amount != null ? Number(r.advance_amount) : 0
   const cancellation = hasCancel ? {
     type: r.cancel_type || '', label: r.cancel_label || '', reason: r.cancel_reason || '',
     by: r.cancel_by || '', at: r.cancel_at || '',
-    amountPaid: r.cancel_amount_paid != null ? Number(r.cancel_amount_paid) : 0,
+    amountPaid: _collected,
+    nonRefundable: _nonRefundable,
+    refundableBase: Math.max(0, _collected - _nonRefundable),
     refundAmount: r.refund_amount != null ? Number(r.refund_amount) : 0,
     refundStatus: r.refund_status || 'none', appliedRule: r.applied_rule || '',
     refundedBy: r.refunded_by || '', refundedAt: r.refunded_at || '', refundNote: r.refund_note || '',

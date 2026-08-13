@@ -19,6 +19,7 @@ import {
 import { useApp } from '../store/AppStore.jsx'
 import { BOOKING_STATUSES, STATUS_TONE, OCCUPANCY, CANCEL_TYPES } from '../store/data.js'
 import { inr, shortDate } from '../lib/format.js'
+import { cancellationRules, applicableRule, refundFor } from '../lib/policy.js'
 import { blockCities, hotelOptionsForCity } from '../lib/rooming.js'
 
 const cx = (...c) => c.filter(Boolean).join(' ')
@@ -284,6 +285,33 @@ export default function BookingDetail() {
                   </p>
                   {b.cancellation?.reason && <p className="mt-2 rounded-lg bg-card px-3 py-2 text-xs">{b.cancellation.reason}</p>}
                   <p className="mt-2 text-xs text-muted-foreground">Held seats have been released back to inventory.</p>
+
+                  {/* Refund breakdown — the booking amount is always non-refundable */}
+                  {b.cancellation && (
+                    <div className="mt-3 grid gap-1.5 rounded-xl border bg-card p-3 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Collected</span>
+                        <span className="font-medium tabular-nums">{inr(b.cancellation.amountPaid || 0)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Booking amount <span className="text-[11px] font-semibold text-status-urgent">(non-refundable)</span></span>
+                        <span className="font-medium tabular-nums text-status-urgent">− {inr(b.cancellation.nonRefundable || 0)}</span>
+                      </div>
+                      {(b.cancellation.refundableBase || 0) > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground">Refundable (per policy{b.cancellation.appliedRule ? ` · ${b.cancellation.appliedRule}` : ''})</span>
+                          <span className="font-medium tabular-nums">{inr(b.cancellation.refundableBase || 0)}</span>
+                        </div>
+                      )}
+                      <div className="mt-0.5 flex items-center justify-between border-t pt-1.5">
+                        <span className="font-semibold">Refund due</span>
+                        <span className={cx('font-bold tabular-nums', (b.cancellation.refundAmount || 0) > 0 ? 'text-status-won' : 'text-muted-foreground')}>{inr(b.cancellation.refundAmount || 0)}</span>
+                      </div>
+                      {(b.cancellation.refundAmount || 0) === 0 && (
+                        <p className="text-[11px] text-muted-foreground">Only the booking amount was paid — the booking amount is non-refundable, so no refund is due.</p>
+                      )}
+                    </div>
+                  )}
 
                   {b.cancellation?.refundStatus && b.cancellation.refundStatus !== 'none' && (
                     <div className="mt-3 overflow-hidden rounded-xl border bg-card">
@@ -683,6 +711,13 @@ function CancelBookingModal({ open, booking, pkg, travelDate, onClose, onConfirm
   const days = daysTo(travelDate)
   const applIdx = applicableRuleIndex(rules, days)
   const appliedPenalty = applIdx >= 0 ? rules[applIdx].penalty : ''
+  // Refund estimate — booking amount is NON-REFUNDABLE; only what was paid above
+  // it follows the policy tiers.
+  const bookingAmount = booking?.advanceAmount ?? 0
+  const collected = Math.max(bookingAmount, booking?.amountCollected ?? bookingAmount)
+  const refundableBase = Math.max(0, collected - bookingAmount)
+  const estRule = pkg ? applicableRule(cancellationRules(pkg), days) : null
+  const estRefund = refundableBase > 0 ? refundFor(estRule, refundableBase, booking?.seats || 1) : 0
   const confirm = () => {
     const note = appliedPenalty ? `${reason.trim()} · Cancellation charge: ${appliedPenalty}` : reason.trim()
     onConfirm(type, note)
@@ -724,6 +759,15 @@ function CancelBookingModal({ open, booking, pkg, travelDate, onClose, onConfirm
             {appliedPenalty && <p className="mt-2 text-xs text-muted-foreground">Applicable now: <span className="font-semibold text-foreground">{appliedPenalty}</span> — recorded with this cancellation.</p>}
           </div>
         )}
+
+        {/* Refund estimate — the booking amount is always non-refundable */}
+        <div className="grid gap-1.5 rounded-xl border p-3 text-xs">
+          <div className="flex items-center justify-between"><span className="text-muted-foreground">Collected</span><span className="font-medium tabular-nums">{inr(collected)}</span></div>
+          <div className="flex items-center justify-between"><span className="text-muted-foreground">Booking amount <span className="font-semibold text-status-urgent">(non-refundable)</span></span><span className="font-medium tabular-nums text-status-urgent">− {inr(bookingAmount)}</span></div>
+          {refundableBase > 0 && <div className="flex items-center justify-between"><span className="text-muted-foreground">Refundable per policy</span><span className="font-medium tabular-nums">{inr(refundableBase)}</span></div>}
+          <div className="mt-0.5 flex items-center justify-between border-t pt-1.5"><span className="font-semibold">Estimated refund</span><span className={cx('font-bold tabular-nums', estRefund > 0 ? 'text-status-won' : 'text-muted-foreground')}>{inr(estRefund)}</span></div>
+          {estRefund === 0 && <p className="text-[11px] text-muted-foreground">Only the booking amount was collected — it's non-refundable, so no refund is due.</p>}
+        </div>
         <div>
           <Eyebrow className="mb-2">Who initiated this?</Eyebrow>
           <div className="grid grid-cols-2 gap-2">

@@ -838,9 +838,15 @@ export function AppProvider({ children }) {
       const pkg = b ? state.packages.find((p) => p.id === b.packageId) : null
       const dep = b ? state.departures.find((d) => d.id === b.departureId) : null
       const daysToTravel = dep?.date ? daysUntil(dep.date) : null
-      const amountPaid = b?.advanceAmount ?? b?.amountPaid ?? 0
+      // RULE: the booking amount (the advance collected to confirm the seat) is
+      // NON-REFUNDABLE. Only amounts paid ABOVE the booking amount are subject to
+      // the cancellation-policy tiers. So if only the booking amount was paid,
+      // the refund is always ₹0.
+      const bookingAmount = b?.advanceAmount ?? 0 // non-refundable
+      const collected = Math.max(bookingAmount, b?.amountCollected ?? bookingAmount)
+      const refundableBase = Math.max(0, collected - bookingAmount)
       const rule = pkg ? applicableRule(cancellationRules(pkg), daysToTravel) : null
-      const refundAmount = refundFor(rule, amountPaid, b?.seats || 1)
+      const refundAmount = refundableBase > 0 ? refundFor(rule, refundableBase, b?.seats || 1) : 0
       setBookingStatus(
         bookingId,
         'Cancelled',
@@ -849,10 +855,12 @@ export function AppProvider({ children }) {
         {
           cancellation: {
             type, label, reason: reason || '', by, at: today(),
-            amountPaid,
+            amountPaid: collected,
+            nonRefundable: bookingAmount, // booking amount never refunded
+            refundableBase, // amount paid above the booking amount
             refundAmount,
             refundStatus: refundAmount > 0 ? 'pending' : 'none',
-            appliedRule: rule ? `${rule.timeline} · ${rule.penalty}` : '',
+            appliedRule: refundableBase > 0 && rule ? `${rule.timeline} · ${rule.penalty}` : 'Booking amount is non-refundable',
           },
         },
       )

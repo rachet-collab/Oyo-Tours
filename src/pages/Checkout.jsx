@@ -305,15 +305,7 @@ export default function Checkout() {
   return (
     <>
       <TopBar
-        title={
-          <span className="flex items-center gap-2">
-            <Link to={pkg ? `/packages/${pkg.id}` : '/packages'} className="text-muted-foreground hover:text-foreground">
-              {pkg ? pkg.destinationCity : 'Packages'}
-            </Link>
-            <Icon name="chevronRight" size={16} className="text-muted-foreground" />
-            <span>Checkout</span>
-          </span>
-        }
+        title="Checkout"
         subtitle="Complete your booking in a few steps."
       />
 

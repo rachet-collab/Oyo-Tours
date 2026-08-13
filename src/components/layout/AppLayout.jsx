@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Navigate, Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar.jsx'
+import AppTopBar from './AppTopBar.jsx'
 import { LayoutContext } from './layout-context.js'
 import { useApp } from '../../store/AppStore.jsx'
 
@@ -42,6 +43,7 @@ export default function AppLayout() {
         )}
 
         <div className="flex flex-1 flex-col overflow-y-auto">
+          <AppTopBar />
           <Outlet />
         </div>
       </div>

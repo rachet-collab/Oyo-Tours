@@ -86,18 +86,8 @@ export default function PackageDetail() {
   return (
     <>
       <TopBar
-        title={
-          <span className="flex items-center gap-2">
-            <Link
-              to="/packages"
-              className="text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Packages
-            </Link>
-            <Icon name="chevronRight" size={16} className="text-muted-foreground" />
-            <span>{pkg.destinationCity}</span>
-          </span>
-        }
+        title={pkg.destinationCity}
+        crumbLabel={pkg.destinationCity}
         subtitle={`${pkg.code ? pkg.code + ' · ' : ''}${pkg.name} · ${pkg.origin}`}
       />
 

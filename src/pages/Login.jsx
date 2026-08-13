@@ -41,15 +41,10 @@ const ROLES = [
 export default function Login() {
   const { login } = useApp()
   const navigate = useNavigate()
-  const [role, setRole] = useState('admin')
-  const active = ROLES.find((r) => r.key === role)
-  const [email, setEmail] = useState(active.email)
-  const [password, setPassword] = useState(active.pass)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-
-  // Selecting a role card prefills its demo credentials (still editable).
-  const pickRole = (r) => { setRole(r.key); setEmail(r.email); setPassword(r.pass); setError('') }
 
   const signIn = async (e) => {
     e.preventDefault()
@@ -101,61 +96,26 @@ export default function Login() {
             Sign in to the portal
           </h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            Choose how you're signing in today.
+            Enter your work email and password to continue.
           </p>
-
-          <div className="mt-6 grid gap-3">
-            {ROLES.map((r) => (
-              <button
-                key={r.key}
-                type="button"
-                onClick={() => pickRole(r)}
-                className={cx(
-                  'flex items-start gap-3 rounded-2xl border bg-card p-4 text-left transition-colors',
-                  role === r.key ? 'border-primary ring-2 ring-ring/20' : 'hover:bg-muted',
-                )}
-              >
-                <span
-                  className={cx(
-                    'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl',
-                    role === r.key ? 'bg-secondary text-primary' : 'bg-muted text-muted-foreground',
-                  )}
-                >
-                  <Icon name={r.icon} size={19} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold">{r.title}</p>
-                  <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{r.desc}</p>
-                </div>
-                <span
-                  className={cx(
-                    'mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border',
-                    role === r.key ? 'border-primary bg-primary text-primary-foreground' : 'border-border',
-                  )}
-                >
-                  {role === r.key && <Icon name="check" size={13} />}
-                </span>
-              </button>
-            ))}
-          </div>
 
           <form onSubmit={signIn} className="mt-6 grid gap-4">
             <Field label="Work email">
-              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required />
+              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@oyorooms.com" autoComplete="username" required />
             </Field>
             <Field label="Password">
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
+              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" required />
             </Field>
             {error && (
               <p className="rounded-lg border border-status-urgent/30 bg-status-urgent-bg/40 px-3 py-2 text-xs font-medium text-status-urgent">{error}</p>
             )}
             <Button type="submit" size="lg" className="mt-1 w-full" disabled={busy}>
-              {busy ? 'Signing in…' : <>Sign in as {active.title}<Icon name="arrowRight" size={17} /></>}
+              {busy ? 'Signing in…' : <>Sign in<Icon name="arrowRight" size={17} /></>}
             </Button>
           </form>
 
           <p className="mt-5 text-center text-xs text-muted-foreground">
-            Secure sign-in · roles enforced by the backend
+            Forgot your password? Contact your admin.
           </p>
         </div>
       </div>

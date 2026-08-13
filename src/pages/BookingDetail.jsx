@@ -105,13 +105,8 @@ export default function BookingDetail() {
   return (
     <>
       <TopBar
-        title={
-          <span className="flex items-center gap-2">
-            <Link to="/bookings" className="text-muted-foreground hover:text-foreground">Bookings</Link>
-            <Icon name="chevronRight" size={16} className="text-muted-foreground" />
-            <span className="font-mono">{b.ref}</span>
-          </span>
-        }
+        title={b.ref}
+        crumbLabel={b.ref}
         subtitle={`${p?.destinationCity} · ${b.category}`}
         actions={isAdmin && b.status !== 'Cancelled' ? (
           <Button variant="outline" size="sm" icon="x" className="border-status-urgent/40 text-status-urgent hover:bg-status-urgent-bg" onClick={() => setCancelOpen(true)}>Cancel booking</Button>

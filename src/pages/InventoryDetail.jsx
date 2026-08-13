@@ -124,13 +124,8 @@ export default function InventoryDetail() {
   return (
     <>
       <TopBar
-        title={
-          <span className="flex items-center gap-2">
-            <Link to={L.route} className="text-muted-foreground hover:text-foreground">{L.title}</Link>
-            <Icon name="chevronRight" size={16} className="text-muted-foreground" />
-            <span className="font-mono">{inv.inventoryId}</span>
-          </span>
-        }
+        title={inv.inventoryId}
+        crumbLabel={inv.inventoryId}
         subtitle={`${inv.airline} · ${inv.sector}`}
       />
 

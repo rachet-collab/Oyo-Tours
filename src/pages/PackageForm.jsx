@@ -15,7 +15,7 @@ const ALL_CATEGORIES = ['Deluxe', 'Super Deluxe', 'Standard']
 const MONTHS_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const monthLabel = (key) => { const [y, m] = key.split('-'); return `${MONTHS_ABBR[+m - 1]} ${y}` }
 const codeOf = (c = '') => { const m = c.match(/\(([A-Za-z]{3})\)/); return (m ? m[1] : c.replace(/[^A-Za-z]/g, '').slice(0, 3)).toUpperCase() }
-const blankFlight = { from: '', to: '', airline: '', flightNo: '' }
+const blankFlight = { from: '', to: '', airline: '', flightNo: '', departTime: '', arriveTime: '' }
 const blankDep = (cats) => ({
   date: '', returnDate: '', seatsTotal: '',
   airlineInventoryId: '', hotelInventoryId: '',
@@ -961,8 +961,10 @@ function DeparturesEditor({ view = 'departures', cats, deps, setDeps, existingDe
   const liveOf = (t) => inventoryView.filter((i) => (i.type || 'airline') === t && i.status !== 'Inactive' && i.available > 0 && !i.packageId)
   const flightAll = liveOf('airline')
 
-  // "Choose from inventory" vs "Enter manually", and multi-select of blocks.
-  const [mode, setMode] = useState('inventory')
+  // Departures are entered manually here — flight inventory is created from the
+  // package, not linked from a pre-built pool, so the "Choose from inventory"
+  // option has been removed.
+  const [mode, setMode] = useState('manual')
   const [selected, setSelected] = useState([])
   const [showNew, setShowNew] = useState(false) // the "New departure" picker is hidden until asked for
   const [bulkOpen, setBulkOpen] = useState(false) // flight-inventory bulk-upload modal
@@ -1238,23 +1240,12 @@ function DeparturesEditor({ view = 'departures', cats, deps, setDeps, existingDe
         {!showNew ? (
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" icon="plus" onClick={() => setShowNew(true)}>Add departures</Button>
-            <Button variant="outline" size="sm" icon="upload" onClick={() => setBulkOpen(true)}>Bulk upload inventory</Button>
           </div>
         ) : (
         <div className="mt-4 rounded-xl border bg-muted/30 p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <Eyebrow>New departure</Eyebrow>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-0.5 rounded-lg border bg-card p-0.5">
-                {[['inventory', 'Choose from inventory'], ['manual', 'Enter manually']].map(([k, l]) => (
-                  <button key={k} type="button" onClick={() => setMode(k)}
-                    className={cx('rounded-md px-2.5 py-1 text-xs font-semibold transition-colors', mode === k ? 'bg-secondary text-secondary-foreground' : 'text-muted-foreground hover:bg-muted')}>
-                    {l}
-                  </button>
-                ))}
-              </div>
-              <button type="button" onClick={() => setShowNew(false)} className="text-muted-foreground hover:text-foreground"><Icon name="x" size={16} /></button>
-            </div>
+            <button type="button" onClick={() => setShowNew(false)} className="text-muted-foreground hover:text-foreground"><Icon name="x" size={16} /></button>
           </div>
 
           {mode === 'inventory' ? (
@@ -1498,6 +1489,8 @@ function FlightRow({ title, f, on }) {
         <Field label="To"><Input value={f.to} onChange={on('to')} placeholder="IXZ" /></Field>
         <Field label="Airline"><Input list="oyo-airlines" value={f.airline} onChange={on('airline')} placeholder="Indigo" /></Field>
         <Field label="Flight no."><Input value={f.flightNo} onChange={on('flightNo')} placeholder="6E-802" /></Field>
+        <Field label="Departure time"><Input type="time" value={f.departTime || ''} onChange={on('departTime')} /></Field>
+        <Field label="Arrival time"><Input type="time" value={f.arriveTime || ''} onChange={on('arriveTime')} /></Field>
       </div>
     </div>
   )

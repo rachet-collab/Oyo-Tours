@@ -175,6 +175,13 @@ const withApproved = (x, { by, at }) => {
   }
 }
 const withRefunded = (x, { by, at, note, proof }) => ({ ...x, cancellation: { ...(x.cancellation || {}), refundStatus: 'refunded', refundedBy: by, refundedAt: at, refundNote: note, refundProof: proof || (x.cancellation || {}).refundProof || null } })
+// Record collection of the outstanding balance — the booking is now paid in
+// full (amountCollected = total). Logged in the booking history.
+const withBalance = (x, { note, proof, by, at }) => ({
+  ...x, amountCollected: x.amount || 0, paymentNote: note || x.paymentNote,
+  balanceProof: proof || x.balanceProof || null,
+  history: [...(x.history || []), { status: x.status, note: note || 'Balance payment collected', by: by || 'System', at: at || '' }],
+})
 // Roll a booking's seats + manifest into a linked inventory record.
 const allocateInto = (inv, booking) => ({
   ...inv,
@@ -349,6 +356,13 @@ function reducer(state, action) {
         ...state,
         bookings: state.bookings.map((x) =>
           x.id === action.bookingId ? withRefunded(x, { by: action.by, at: action.at, note: action.note, proof: action.proof }) : x),
+      }
+
+    case 'COLLECT_BALANCE':
+      return {
+        ...state,
+        bookings: state.bookings.map((x) =>
+          x.id === action.bookingId ? withBalance(x, { note: action.note, proof: action.proof, by: action.by, at: action.at }) : x),
       }
 
     default:
@@ -873,6 +887,18 @@ export function AppProvider({ children }) {
       dispatch({ type: 'MARK_REFUNDED', bookingId, note: note || '', by, at, proof })
       if (b) apiUpsertBooking(withRefunded(b, { by, at, note: note || '', proof }))
     }
+    // Record the outstanding balance being collected — marks the booking paid in
+    // full. Requires a payment reference note; proof is optional.
+    const collectBalance = (bookingId, note, proof = null) => {
+      const b = state.bookings.find((x) => x.id === bookingId)
+      const by = state.user ? `${state.user.name} (${roleLabel(state.user.role)})` : 'System'
+      const at = stamp()
+      const proofMeta = proof && proof.name ? { name: proof.name, size: proof.size || 0, type: proof.type || '' } : proof
+      const balanceAmt = Math.max(0, (b?.amount || 0) - (b?.amountCollected ?? b?.advanceAmount ?? 0))
+      const fullNote = `Balance ₹${balanceAmt.toLocaleString('en-IN')} collected${note ? ` — ${note}` : ''}`
+      dispatch({ type: 'COLLECT_BALANCE', bookingId, note: fullNote, proof: proofMeta, by, at })
+      if (b) apiUpsertBooking(withBalance(b, { note: fullNote, proof: proofMeta, by, at }))
+    }
 
     // Capture / update the traveller name list + details for a booking (e.g. to
     // complete the naming allocation before the travel/naming deadline).
@@ -960,6 +986,7 @@ export function AppProvider({ children }) {
       setBookingTravellers,
       cancelBooking,
       markRefunded,
+      collectBalance,
       approveBookingPayment,
       stats,
       // airline inventory

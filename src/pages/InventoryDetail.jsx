@@ -7,7 +7,7 @@ import InventoryImage from '../components/InventoryImage.jsx'
 import { useApp } from '../store/AppStore.jsx'
 import { INV_STATUS_TONE, INVENTORY_LABELS, OCCUPANCY } from '../store/data.js'
 import { inr, shortDate, timeLabel, flightDuration } from '../lib/format.js'
-import { blockCities, hotelOptionsForCity, travellersForBlock, downloadRooming } from '../lib/rooming.js'
+import { blockCities, hotelOptionsForCity, travellersForBlock, downloadRooming, bookingsForBlock } from '../lib/rooming.js'
 
 const cx = (...c) => c.filter(Boolean).join(' ')
 const cityCode = (s = '') => (String(s).match(/\(([A-Za-z]{3})\)/)?.[1] || String(s).replace(/[^A-Za-z]/g, '').slice(0, 3)).toUpperCase()
@@ -120,6 +120,47 @@ export default function InventoryDetail() {
   const isHotel = (inv.type || 'airline') === 'hotel'
   const showRelease = inv.available > 0 && inv.releaseDaysLeft != null && inv.releaseDaysLeft <= 7 &&
     inv.status === 'Active'
+
+  // --- Per-category room ledger (hotels) -----------------------------------
+  // Each hotel category (Deluxe, Super Deluxe, …) is its own pool: booking a
+  // Deluxe room draws down Deluxe only, Super Deluxe stays intact. Purchased is
+  // the per-city room split; allocated is rooms consumed by that category's
+  // (non-cancelled) bookings; available is what's left.
+  const roomsForBooking = (b) => {
+    const p = b.pax || {}
+    return Math.ceil((Number(p.adult) || 0) / 2) + (Number(p.single) || 0)
+  }
+  const catLedger = (() => {
+    if (!isHotel || !Array.isArray(inv.cities) || inv.cities.length === 0) return []
+    // Ordered, de-duped category list across all cities.
+    const order = []
+    inv.cities.forEach((c) => (c.categories || []).forEach((cat) => { if (!order.includes(cat)) order.push(cat) }))
+    // Allocated rooms per category, from bookings linked to this block.
+    const allocByCat = {}
+    bookingsForBlock(bookings, inv).forEach((b) => {
+      const cat = b.category || '—'
+      allocByCat[cat] = (allocByCat[cat] || 0) + roomsForBooking(b)
+    })
+    return order.map((cat) => {
+      // Capacity for the category = its per-city room split (one block per city,
+      // so the same split applies in each city — take the largest declared).
+      const purchased = Math.max(0, ...inv.cities.map((c) => Number(c.roomsByCategory?.[cat]) || 0))
+      const cities = inv.cities.map((c) => {
+        const idx = (c.categories || []).findIndex((x) => x === cat)
+        return {
+          city: c.city,
+          rooms: Number(c.roomsByCategory?.[cat]) || 0,
+          hotel: (idx >= 0 && c.hotels && c.hotels[idx]) || '—',
+        }
+      })
+      const allocated = allocByCat[cat] || 0
+      return { cat, purchased, allocated, available: Math.max(0, purchased - allocated), cities }
+    })
+  })()
+  const catTotals = catLedger.reduce(
+    (a, c) => ({ purchased: a.purchased + c.purchased, allocated: a.allocated + c.allocated }),
+    { purchased: 0, allocated: 0 },
+  )
 
   return (
     <>
@@ -239,12 +280,16 @@ export default function InventoryDetail() {
             )}
 
             <div className="px-5 pb-5 pt-4">
-              <div className="grid grid-cols-2 gap-4 rounded-xl border p-4 sm:grid-cols-4">
-                <Metric label={L.anchor} value={shortDate(inv.departureDate) + (inv.departTime ? ` · ${timeLabel(inv.departTime)}` : '')} icon="calendar" />
-                <Metric label={L.ret} value={inv.returnDate ? shortDate(inv.returnDate) + (inv.returnDepartTime ? ` · ${timeLabel(inv.returnDepartTime)}` : '') : '—'} icon="calendar" />
-                <Metric label={L.from} value={inv.departureCity} icon="mapPin" small />
-                <Metric label={L.to} value={inv.arrivalCity} icon="mapPin" small />
-              </div>
+              {/* Flights show the check-in/out + route summary. Hotels don't
+                  capture check-in/check-out, so this card is hidden for them. */}
+              {!isHotel && (
+                <div className="grid grid-cols-2 gap-4 rounded-xl border p-4 sm:grid-cols-4">
+                  <Metric label={L.anchor} value={shortDate(inv.departureDate) + (inv.departTime ? ` · ${timeLabel(inv.departTime)}` : '')} icon="calendar" />
+                  <Metric label={L.ret} value={inv.returnDate ? shortDate(inv.returnDate) + (inv.returnDepartTime ? ` · ${timeLabel(inv.returnDepartTime)}` : '') : '—'} icon="calendar" />
+                  <Metric label={L.from} value={inv.departureCity} icon="mapPin" small />
+                  <Metric label={L.to} value={inv.arrivalCity} icon="mapPin" small />
+                </div>
+              )}
               {!isHotel && (
                 <div className="mt-4 overflow-hidden rounded-xl border">
                   <div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-3">
@@ -272,45 +317,89 @@ export default function InventoryDetail() {
                 </div>
               )}
               {pkg && (
-                <p className="mt-3 text-xs text-muted-foreground">
-                  Linked package: <Link to={`/packages/${pkg.id}`} className="font-semibold text-primary">{pkg.name}</Link>
-                </p>
+                <div className="mt-4 overflow-hidden rounded-xl border">
+                  <div className="flex items-center justify-between border-b bg-muted/40 px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <Icon name="boxes" size={15} className="text-primary" />
+                      <h3 className="text-sm font-bold">Linked package</h3>
+                    </div>
+                    <Link to={`/packages/${pkg.id}`} className="text-xs font-semibold text-primary hover:underline">View package →</Link>
+                  </div>
+                  <div className="grid gap-4 p-4">
+                    <div className="flex items-center gap-3">
+                      {pkg.coverUrl ? (
+                        <img src={pkg.coverUrl} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover" />
+                      ) : (
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-secondary text-lg">{pkg.emoji || '🧳'}</span>
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold">{pkg.name}</p>
+                        <p className="text-xs text-muted-foreground">{[pkg.code, pkg.durationLabel].filter(Boolean).join(' · ') || '—'}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                      <Metric label="Route" value={[pkg.origin, pkg.destinationCity].filter(Boolean).join(' → ') || '—'} icon="mapPin" small />
+                      <Metric label="Country" value={pkg.country || '—'} icon="mapPin" small />
+                      <Metric label="Destinations" value={pkg.destinationsLabel || '—'} icon="mapPin" small />
+                    </div>
+                    {Array.isArray(pkg.categories) && pkg.categories.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Categories</span>
+                        {pkg.categories.map((c) => (
+                          <Pill key={c} tone={c === 'Super Deluxe' ? 'proposal' : 'neutral'}>{c}</Pill>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           </Card>
 
-          {/* Cities in this block — rooms per city + category bifurcation */}
-          {isHotel && Array.isArray(inv.cities) && inv.cities.length > 0 && (
+          {/* Inventory by category — each category is its own room pool; a
+              booking in one category draws down only that category. Under each
+              category we list its cities, room split & hotel. */}
+          {isHotel && catLedger.length > 0 && (
             <Card className="p-5">
               <div className="mb-3 flex items-center justify-between">
-                <Eyebrow>Rooms per city</Eyebrow>
-                <span className="text-xs font-semibold text-muted-foreground">{inv.cities.length} {inv.cities.length === 1 ? 'city' : 'cities'} · one {inv.totalSeats}-room block per city</span>
+                <Eyebrow>Inventory by category</Eyebrow>
+                <span className="text-xs font-semibold text-muted-foreground">{catLedger.length} {catLedger.length === 1 ? 'category' : 'categories'} · {inv.cities.length} {inv.cities.length === 1 ? 'city' : 'cities'}</span>
               </div>
               <div className="grid gap-3">
-                {inv.cities.map((c, i) => (
-                  <div key={i} className="rounded-xl border p-4">
-                    {/* Part 1 — the city + its room total */}
-                    <div className="mb-3 flex items-center gap-2.5">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-primary"><Icon name="mapPin" size={15} /></span>
-                      <span className="text-sm font-bold">{c.city}</span>
-                      <span className="ml-auto rounded-lg bg-muted px-2.5 py-1 text-sm font-bold tabular-nums">{c.rooms ?? inv.totalSeats} <span className="text-xs font-medium text-muted-foreground">rooms</span></span>
-                    </div>
-                    {/* Part 2 — bifurcation by category (rooms + hotel options) */}
-                    <div className="grid gap-2 border-t pt-3">
-                      {(c.categories || []).map((cat, k) => (
-                        <div key={cat} className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-3">
-                          <span className="flex shrink-0 items-center gap-2 sm:w-44">
-                            <Pill tone={cat === 'Super Deluxe' ? 'proposal' : 'neutral'}>{cat}</Pill>
-                            {c.roomsByCategory && c.roomsByCategory[cat] != null && (
-                              <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-bold tabular-nums">{c.roomsByCategory[cat]} <span className="font-medium text-muted-foreground">rm</span></span>
-                            )}
-                          </span>
-                          <span className="text-sm text-muted-foreground">{(c.hotels && c.hotels[k]) || '—'}</span>
+                {catLedger.map((cl) => {
+                  const pct = cl.purchased ? Math.round((cl.allocated / cl.purchased) * 100) : 0
+                  return (
+                    <div key={cl.cat} className="rounded-xl border p-4">
+                      {/* Category header + its own allocation ledger */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Pill tone={cl.cat === 'Super Deluxe' ? 'proposal' : 'neutral'}>{cl.cat}</Pill>
+                        <span className="rounded-lg bg-muted px-2.5 py-1 text-sm font-bold tabular-nums">{cl.purchased} <span className="text-xs font-medium text-muted-foreground">rooms</span></span>
+                        <div className="ml-auto flex items-center gap-3 text-xs font-semibold">
+                          <span className="text-muted-foreground">Allocated <span className="tabular-nums text-foreground">{cl.allocated}</span></span>
+                          <span className={cl.available > 0 ? 'text-status-won' : 'text-status-urgent'}>Available <span className="tabular-nums">{cl.available}</span></span>
                         </div>
-                      ))}
+                      </div>
+                      <div className="mt-2.5">
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                          <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, pct)}%` }} />
+                        </div>
+                      </div>
+                      {/* Cities under this category */}
+                      <div className="mt-3 grid gap-2 border-t pt-3">
+                        {cl.cities.map((cc) => (
+                          <div key={cc.city} className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-3">
+                            <span className="flex shrink-0 items-center gap-2 sm:w-52">
+                              <span className="flex h-6 w-6 items-center justify-center rounded-md bg-secondary text-primary"><Icon name="mapPin" size={13} /></span>
+                              <span className="text-sm font-semibold">{cc.city}</span>
+                              <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-bold tabular-nums">{cc.rooms} <span className="font-medium text-muted-foreground">rm</span></span>
+                            </span>
+                            <span className="text-sm text-muted-foreground">{cc.hotel}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </Card>
           )}
@@ -376,15 +465,51 @@ export default function InventoryDetail() {
           <Card className="p-5">
             <div className="mb-3 flex items-center justify-between">
               <Eyebrow>{L.units} allocation</Eyebrow>
-              <span className="text-xs font-semibold text-muted-foreground">{inv.utilization}% utilized</span>
+              <span className="text-xs font-semibold text-muted-foreground">{isHotel ? (inv.totalSeats ? Math.round((catTotals.allocated / inv.totalSeats) * 100) : 0) : inv.utilization}% utilized</span>
             </div>
-            <SeatMeter available={inv.available} total={inv.totalSeats} />
-            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Kpi label="Purchased" value={inv.totalSeats} />
-              <Kpi label="Allocated" value={inv.allocatedSeats} />
-              <Kpi label="Available" value={inv.available} tone={inv.available > 0 ? 'text-status-won' : ''} />
-              <Kpi label="Released" value={inv.releasedSeats || 0} tone={inv.releasedSeats ? 'text-status-urgent' : ''} />
-            </div>
+            {isHotel ? (
+              <>
+                {(() => {
+                  const allocated = catTotals.allocated
+                  const available = Math.max(0, inv.totalSeats - allocated - (inv.releasedSeats || 0))
+                  return (
+                    <>
+                      <SeatMeter available={available} total={inv.totalSeats} />
+                      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        <Kpi label="Purchased" value={inv.totalSeats} />
+                        <Kpi label="Allocated" value={allocated} />
+                        <Kpi label="Available" value={available} tone={available > 0 ? 'text-status-won' : ''} />
+                        <Kpi label="Released" value={inv.releasedSeats || 0} tone={inv.releasedSeats ? 'text-status-urgent' : ''} />
+                      </div>
+                    </>
+                  )
+                })()}
+                {/* Per-category ledger — each pool depletes independently. */}
+                <div className="mt-4 overflow-hidden rounded-xl border">
+                  <div className="grid grid-cols-4 gap-2 border-b bg-muted/50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                    <span>Category</span><span className="text-right">Purchased</span><span className="text-right">Allocated</span><span className="text-right">Available</span>
+                  </div>
+                  {catLedger.map((cl) => (
+                    <div key={cl.cat} className="grid grid-cols-4 items-center gap-2 border-t px-3 py-2 text-sm">
+                      <span><Pill tone={cl.cat === 'Super Deluxe' ? 'proposal' : 'neutral'}>{cl.cat}</Pill></span>
+                      <span className="text-right font-semibold tabular-nums">{cl.purchased}</span>
+                      <span className="text-right font-semibold tabular-nums">{cl.allocated}</span>
+                      <span className={`text-right font-semibold tabular-nums ${cl.available > 0 ? 'text-status-won' : 'text-status-urgent'}`}>{cl.available}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <SeatMeter available={inv.available} total={inv.totalSeats} />
+                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <Kpi label="Purchased" value={inv.totalSeats} />
+                  <Kpi label="Allocated" value={inv.allocatedSeats} />
+                  <Kpi label="Available" value={inv.available} tone={inv.available > 0 ? 'text-status-won' : ''} />
+                  <Kpi label="Released" value={inv.releasedSeats || 0} tone={inv.releasedSeats ? 'text-status-urgent' : ''} />
+                </div>
+              </>
+            )}
             {(inv.history || []).some((h) => h.action === 'release') && (
               <div className="mt-4 border-t pt-4">
                 <Eyebrow className="mb-2">Release log</Eyebrow>

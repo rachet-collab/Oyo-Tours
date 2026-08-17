@@ -82,7 +82,8 @@ export default function App() {
 
             {/* Hotel records share the same framework; the list now lives under /inventory. */}
             <Route path="/hotels" element={<Navigate to="/inventory" replace />} />
-            <Route path="/hotels/new" element={<RequireRole roles={['admin', 'operations']}><InventoryForm type="hotel" /></RequireRole>} />
+            {/* Hotel blocks are created only from packages — manual add is disabled. */}
+            <Route path="/hotels/new" element={<Navigate to="/inventory/hotels" replace />} />
             <Route path="/hotels/:id/edit" element={<RequireRole roles={['admin', 'operations']}><InventoryForm /></RequireRole>} />
             <Route path="/hotels/:id" element={<RequireRole roles={['admin', 'operations']}><InventoryDetail /></RequireRole>} />
 

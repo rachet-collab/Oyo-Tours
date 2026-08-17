@@ -9,7 +9,7 @@ import InventoryImport from './InventoryImport.jsx'
 
 const CHOICES = [
   { key: 'airline', icon: 'plane', title: 'Flights', desc: 'Airline seat blocks — routes, dates, seats, vendors.' },
-  { key: 'hotel', icon: 'building', title: 'Hotels', desc: 'Hotel room blocks — properties, stays, rooms, vendors.' },
+  // Hotels are seeded only from packages — no bulk-upload path.
   { key: 'vendor', icon: 'users', title: 'Vendors', desc: 'Add suppliers & consolidators in one go.' },
 ]
 

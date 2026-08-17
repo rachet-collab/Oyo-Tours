@@ -153,10 +153,10 @@ export default function Finance() {
       <TopBar
         title="Finance"
         subtitle="Approve the payments your sales team logs against package bookings."
-        actions={<Button variant="outline" icon="trend" onClick={() => navigate('/finance/analytics')}>Analytics</Button>}
       />
 
       <div className="grid gap-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
+        {/* Filter tabs + Analytics — sit below the page heading & subheading. */}
         <div className="flex flex-wrap items-center gap-2">
           {FILTERS.map((f) => (
             <button key={f} onClick={() => setFilter(f)}
@@ -164,6 +164,7 @@ export default function Finance() {
               {f}
             </button>
           ))}
+          <Button variant="outline" icon="trend" className="ml-auto" onClick={() => navigate('/finance/analytics')}>Analytics</Button>
         </div>
 
         {/* Filter panel — search + logged-by */}

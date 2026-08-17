@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom'
 import TopBar from '../components/layout/TopBar.jsx'
 import Icon from '../components/ui/Icon.jsx'
 import CityCover from '../components/ui/CityCover.jsx'
+import InventoryImage from '../components/InventoryImage.jsx'
 import {
   Avatar,
   Button,
@@ -18,7 +19,7 @@ import {
 } from '../components/ui/primitives.jsx'
 import { useApp } from '../store/AppStore.jsx'
 import { BOOKING_STATUSES, STATUS_TONE, OCCUPANCY, CANCEL_TYPES } from '../store/data.js'
-import { inr, shortDate } from '../lib/format.js'
+import { inr, shortDate, timeLabel, flightDuration } from '../lib/format.js'
 import { cancellationRules, applicableRule, refundFor } from '../lib/policy.js'
 import { blockCities, hotelOptionsForCity } from '../lib/rooming.js'
 
@@ -38,7 +39,7 @@ const readFile = (file) => new Promise((res) => { const r = new FileReader(); r.
 export default function BookingDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { user, bookings, guestById, packageById, departureById, inventoryById, setBookingStatus, setBookingTravellers, approveBookingPayment, cancelBooking, markRefunded } = useApp()
+  const { user, bookings, guestById, packageById, departureById, inventoryById, setBookingStatus, setBookingTravellers, approveBookingPayment, cancelBooking, markRefunded, collectBalance } = useApp()
   const b = bookings.find((x) => x.id === id)
   const isAdmin = user?.role === 'admin'
   // Linked hotel block (for per-city hotel assignment against each traveller).
@@ -58,6 +59,9 @@ export default function BookingDetail() {
   const payProofRef = useRef(null)
   const [refundProof, setRefundProof] = useState(null)
   const refundProofRef = useRef(null)
+  const [balNote, setBalNote] = useState('')
+  const [balProof, setBalProof] = useState(null)
+  const balProofRef = useRef(null)
   const [allUpdatesOpen, setAllUpdatesOpen] = useState(false)
 
   if (!b) {
@@ -77,7 +81,8 @@ export default function BookingDetail() {
 
   // Payment breakdown (advance vs balance due) per the package policy.
   const advancePaid = b.advanceAmount || 0
-  const balanceDue = Math.max(0, (b.amount || 0) - advancePaid)
+  const collected = b.amountCollected != null ? b.amountCollected : advancePaid
+  const balanceDue = Math.max(0, (b.amount || 0) - collected)
   const bdDays = p?.payment?.balanceDueDays ?? 10
   const balanceDueDate = d?.date ? new Date(new Date(d.date).getTime() - bdDays * 86400000).toISOString().slice(0, 10) : ''
 
@@ -87,7 +92,11 @@ export default function BookingDetail() {
     const ev = (b.history || []).map((h) => ({ label: h.status, note: h.note, by: h.by, at: h.at, tone: STATUS_TONE[h.status] || 'neutral' }))
     if (b.paymentApproved) ev.push({ label: 'Payment approved', note: 'Approved by finance', by: b.approvedBy, at: b.approvedAt, tone: 'won' })
     if (b.cancellation?.refundStatus === 'refunded') ev.push({ label: 'Refund settled', note: `Refund ${inr(b.cancellation.refundAmount || 0)} paid${b.cancellation.refundNote ? ` · ${b.cancellation.refundNote}` : ''}`, by: b.cancellation.refundedBy, at: b.cancellation.refundedAt, tone: 'won' })
-    return ev
+    // Order strictly by time (oldest → newest). The approval/refund events are
+    // appended out of order above, so sort by timestamp; undated entries keep
+    // their original relative position via the stable index tiebreaker.
+    const t = (x) => { const n = x.at ? Date.parse(x.at) : NaN; return Number.isNaN(n) ? 0 : n }
+    return ev.map((e, i) => ({ e, i })).sort((a, c) => (t(a.e) - t(c.e)) || (a.i - c.i)).map((x) => x.e)
   })()
 
   const onProof = async (e) => { const f = e.target.files?.[0]; if (f) setProof(await readFile(f)); e.target.value = '' }
@@ -101,6 +110,12 @@ export default function BookingDetail() {
     if (!note.trim() || !proof) return
     setBookingStatus(b.id, 'Confirmed', note.trim(), proof)
     navigate('/bookings')
+  }
+  const onBalProof = async (e) => { const f = e.target.files?.[0]; if (f) setBalProof(await readFile(f)); e.target.value = '' }
+  const collectBalanceNow = () => {
+    if (!balNote.trim()) return
+    collectBalance(b.id, balNote.trim(), balProof)
+    setBalNote(''); setBalProof(null)
   }
 
   return (
@@ -221,17 +236,19 @@ export default function BookingDetail() {
                           {t.frequentFlyer && <Detail label="Frequent flyer" value={t.frequentFlyer} mono />}
                         </dl>
                       )}
+                      {/* Read-only: hotel allocation is managed from Inventory
+                          (rooming), not editable here. Bookings only display it. */}
                       {hotelBlock && blockCities(hotelBlock).length > 0 && (
                         <div className="mt-2.5 grid gap-2 border-t pt-2.5 sm:grid-cols-3">
                           {blockCities(hotelBlock).map((city) => {
-                            const opts = hotelOptionsForCity(hotelBlock, city, b.category)
                             const val = t.hotelByCity?.[city] || ''
-                            const listId = `bh-${i}-${city.replace(/\W/g, '')}`
                             return (
                               <div key={city}>
                                 <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">{city}</p>
-                                <Input value={val} placeholder="Type hotel" list={listId} onChange={(e) => assignHotel(i, city, e.target.value)} className="h-9 text-xs" />
-                                <datalist id={listId}>{opts.map((o) => <option key={o} value={o} />)}</datalist>
+                                <div className="flex min-h-9 items-center gap-1.5 rounded-lg border bg-muted/30 px-2.5 py-1.5 text-xs">
+                                  <Icon name="building" size={13} className="shrink-0 text-primary" />
+                                  <span className={`truncate ${val ? 'font-medium' : 'text-muted-foreground'}`}>{val || 'Not allocated'}</span>
+                                </div>
                               </div>
                             )
                           })}
@@ -395,8 +412,8 @@ export default function BookingDetail() {
                   <span className="font-bold tabular-nums">{inr(b.amount)}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Advance collected</span>
-                  <span className="font-semibold tabular-nums text-status-won">{inr(advancePaid)}</span>
+                  <span className="text-muted-foreground">Collected</span>
+                  <span className="font-semibold tabular-nums text-status-won">{inr(collected)}</span>
                 </div>
                 <div className="flex items-center justify-between border-t pt-2 text-sm">
                   <span className="font-semibold">Balance due</span>
@@ -436,21 +453,58 @@ export default function BookingDetail() {
                   </div>
                 </div>
               ) : (
-                <div className="rounded-xl border border-status-won/30 bg-status-won-bg/40 p-4">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-status-won-bg text-status-won">
-                      <Icon name="check" size={18} />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold">Payment confirmed · seats locked</p>
-                      <p className="truncate text-xs text-muted-foreground">{b.paymentNote || 'This booking has been confirmed.'}</p>
+                <div className="grid gap-3">
+                  <div className="rounded-xl border border-status-won/30 bg-status-won-bg/40 p-4">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-status-won-bg text-status-won">
+                        <Icon name="check" size={18} />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold">Payment confirmed · seats locked</p>
+                        <p className="truncate text-xs text-muted-foreground">{b.paymentNote || 'This booking has been confirmed.'}</p>
+                      </div>
                     </div>
+                    {b.paymentProof?.url && (
+                      <a href={b.paymentProof.url} download={b.paymentProof.name}
+                        className="mt-3 inline-flex items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-muted">
+                        <Icon name="paperclip" size={13} /> {b.paymentProof.name || 'View payment proof'}
+                      </a>
+                    )}
                   </div>
-                  {b.paymentProof?.url && (
-                    <a href={b.paymentProof.url} download={b.paymentProof.name}
-                      className="mt-3 inline-flex items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-muted">
-                      <Icon name="paperclip" size={13} /> {b.paymentProof.name || 'View payment proof'}
-                    </a>
+
+                  {/* Collect the outstanding balance (any role that can record a payment). */}
+                  {balanceDue > 0 ? (
+                    <div className="rounded-xl border p-4">
+                      <div className="flex items-start gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-primary">
+                          <Icon name="wallet" size={18} />
+                        </span>
+                        <div>
+                          <p className="text-sm font-bold">Collect balance payment</p>
+                          <p className="text-xs text-muted-foreground">Balance due {inr(balanceDue)}. Add the payment reference to mark this booking paid in full.</p>
+                        </div>
+                      </div>
+                      <Textarea rows={2} className="mt-3" value={balNote} onChange={(e) => setBalNote(e.target.value)} placeholder="Balance payment reference (UPI / NEFT / receipt no.)…" />
+                      <div className="mt-2">
+                        <input ref={balProofRef} type="file" accept="image/*,application/pdf" hidden onChange={onBalProof} />
+                        {balProof ? (
+                          <div className="flex items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2 text-xs">
+                            <span className="flex min-w-0 items-center gap-1.5"><Icon name="paperclip" size={13} className="text-primary" /><span className="truncate font-medium">{balProof.name}</span></span>
+                            <button type="button" className="shrink-0 font-semibold text-muted-foreground hover:text-foreground" onClick={() => setBalProof(null)}>Remove</button>
+                          </div>
+                        ) : (
+                          <Button type="button" size="sm" variant="outline" icon="plus" onClick={() => balProofRef.current?.click()}>Upload proof (optional)</Button>
+                        )}
+                      </div>
+                      <div className="mt-3 flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-muted-foreground">Reference is required.</span>
+                        <Button icon="check" disabled={!balNote.trim()} onClick={collectBalanceNow}>Record balance {inr(balanceDue)}</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 rounded-xl border border-status-won/30 bg-status-won-bg/40 px-4 py-3 text-sm font-semibold text-status-won">
+                      <Icon name="check" size={16} /> Paid in full — no balance due
+                    </div>
                   )}
                 </div>
               )}
@@ -488,12 +542,12 @@ export default function BookingDetail() {
               </div>
               {/* Advance collected vs balance still due (per payment policy) */}
               {(() => {
-                const paid = b.advanceAmount || 0
-                const due = Math.max(0, (b.amount || 0) - paid)
+                const paid = collected
+                const due = balanceDue
                 return (
                   <div className="mt-3 grid gap-1.5 rounded-xl border p-3 text-sm">
                     <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Advance collected</span>
+                      <span className="text-muted-foreground">Collected</span>
                       <span className="font-semibold tabular-nums">{inr(paid)}</span>
                     </div>
                     <div className="flex items-center justify-between">
@@ -792,14 +846,30 @@ function CancelBookingModal({ open, booking, pkg, travelDate, onClose, onConfirm
 }
 
 function FlightLeg({ label, f, date }) {
+  const dur = flightDuration(f.departTime, f.arriveTime)
   return (
     <div>
       <Eyebrow>{label}</Eyebrow>
-      <p className="mt-1 flex items-center gap-1.5 font-semibold">
-        {f.from} <Icon name="arrowRight" size={13} className="text-muted-foreground" /> {f.to}
-        <span className="text-xs font-medium text-muted-foreground">· {f.airline} {f.flightNo}</span>
-      </p>
-      <p className="text-xs text-muted-foreground">{shortDate(date)}</p>
+      <div className="mt-1.5 flex items-center gap-2.5">
+        <InventoryImage inv={{ type: 'airline', airline: f.airline }} size={30} rounded="rounded-lg" className="shrink-0" />
+        <div className="min-w-0">
+          <p className="flex items-center gap-1.5 font-semibold leading-tight">
+            {f.from} <Icon name="arrowRight" size={13} className="text-muted-foreground" /> {f.to}
+          </p>
+          <p className="text-xs font-medium text-muted-foreground">{f.airline} {f.flightNo}</p>
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+        <span className="text-muted-foreground">{shortDate(date)}</span>
+        {(f.departTime || f.arriveTime) && (
+          <span className="flex items-center gap-1 font-semibold tabular-nums">
+            {f.departTime ? timeLabel(f.departTime) : '—'}
+            <Icon name="arrowRight" size={11} className="text-muted-foreground" />
+            {f.arriveTime ? timeLabel(f.arriveTime) : '—'}
+            {dur && <span className="font-medium text-muted-foreground">· {dur}</span>}
+          </span>
+        )}
+      </div>
     </div>
   )
 }

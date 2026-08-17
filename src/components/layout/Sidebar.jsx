@@ -106,16 +106,10 @@ export default function Sidebar({ className = '', onNavigate, onClose }) {
         ))}
       </nav>
 
-      {/* Footer — the signed-in user & logout now live in the global top bar. */}
+      {/* Footer — the signed-in user & logout live in the global top bar. */}
       <div className="shrink-0 border-t p-3">
-        {user?.role === 'admin' && (
-          <button type="button" onClick={() => { navigate('/settings'); onNavigate?.() }}
-            className="flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-            <Icon name="settings" size={18} /> Settings
-          </button>
-        )}
         {/* Build stamp — lets you confirm which build is actually live. */}
-        <p className="px-2 pt-1.5 text-[10px] text-muted-foreground/70">build {typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : 'dev'} UTC</p>
+        <p className="px-2 text-[10px] text-muted-foreground/70">build {typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : 'dev'} UTC</p>
       </div>
     </aside>
   )

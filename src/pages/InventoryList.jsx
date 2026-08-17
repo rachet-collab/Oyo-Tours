@@ -116,7 +116,6 @@ export default function InventoryList({ type = 'airline' }) {
       <TopBar
         title={isHotelView ? 'Hotel inventory' : 'Flight inventory'}
         subtitle={isHotelView ? 'Hotel room blocks — allocation, vendors & deadlines.' : 'Airline seat blocks — allocation, vendors & deadlines.'}
-        actions={<Button variant="outline" icon="chevronLeft" onClick={() => navigate('/inventory')}>Inventory overview</Button>}
       />
 
       <div className="grid gap-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
@@ -129,14 +128,14 @@ export default function InventoryList({ type = 'airline' }) {
           ]}
         />
 
-        {/* Actions */}
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {!isHotelView && <Button variant="outline" icon="plane" onClick={() => navigate('/airlines')}>Airlines</Button>}
-          <Button variant="outline" icon="upload" onClick={() => navigate(`/inventory/bulk-upload?type=${type}`)}>Bulk upload</Button>
-          <Button icon="plus" onClick={() => navigate(isHotelView ? '/hotels/new' : '/inventory/new')}>
-            {isHotelView ? 'Add hotel block' : 'Add flight'}
-          </Button>
-        </div>
+        {/* Actions — both flight and hotel inventory are seeded only from
+            packages, so there is no manual add or bulk-upload entry point here.
+            Flights keep the Airlines registry link. */}
+        {!isHotelView && (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="outline" icon="plane" onClick={() => navigate('/airlines')}>Airlines</Button>
+          </div>
+        )}
 
         {/* Filter panel (search + dropdowns + active-filter chips) */}
         <Card className="grid gap-3 p-4">
@@ -203,7 +202,7 @@ export default function InventoryList({ type = 'airline' }) {
 
         <Card className="overflow-hidden">
           {rows.length === 0 ? (
-            <EmptyState icon="boxes" title="No inventory found" hint="Add a record, upload in bulk, or adjust your filters." />
+            <EmptyState icon="boxes" title="No inventory found" hint={isHotelView ? 'Hotel room blocks are created from packages — add hotels to a package and they’ll appear here.' : 'Flight blocks are created from packages — add flights to a package departure and they’ll appear here.'} />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1040px] text-sm">

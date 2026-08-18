@@ -149,7 +149,11 @@ const manifestEntries = (booking, details, names) =>
         gender: d.gender || '', phone: d.phone || '', email: d.email || '',
         passportNo: d.passportNo || '', passportCountry: d.passportCountry || '',
         passportExpiry: d.passportExpiry || '', frequentFlyer: d.frequentFlyer || '',
-        docs: d.docs || [], bookingId: booking.id, bookingRef: booking.ref, guestId: booking.guestId,
+        // Only keep lightweight doc references on the inventory manifest — NEVER
+        // the base64 file blobs (they can be many MB each and bloat the row until
+        // `select *` on inventory times out). The actual files stay on the booking.
+        docs: (d.docs || []).map((doc) => ({ name: doc.name || 'Document' })),
+        bookingId: booking.id, bookingRef: booking.ref, guestId: booking.guestId,
       }))
     : (names || []).map((n) => ({ name: n, bookingId: booking.id, bookingRef: booking.ref, guestId: booking.guestId }))
 const withStatus = (x, { status, paymentNote, proof, cancellation, by, at }) => ({

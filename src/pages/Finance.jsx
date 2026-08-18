@@ -66,7 +66,7 @@ function MoneyBar({ label, value, pct, barClass, valClass }) {
 // Finance = approvals queue. Sales log payments (transactions) against a package
 // booking; operations / finance review and approve them here.
 export default function Finance() {
-  const { bookings, packageById, guestById, approveBookingPayment } = useApp()
+  const { bookings, packageById, guestById, departureById, approveBookingPayment } = useApp()
   const navigate = useNavigate()
   const [filter, setFilter] = useState('All')
   const [range, setRange] = useState('all') // analytics date-range preset
@@ -87,14 +87,17 @@ export default function Finance() {
     [bookings, packageById, guestById],
   )
 
+  // Actual money collected against a booking (advance + any balance payment).
+  const collectedOf = (b) => (b.amountCollected != null ? b.amountCollected : (b.advanceAmount || 0))
   const totals = useMemo(() => ({
-    collected: txns.filter((t) => t.approved).reduce((s, t) => s + t.amount, 0),
+    // Real cash collected across live bookings (not just booking value).
+    collected: bookings.filter((b) => b.status !== 'Cancelled').reduce((s, b) => s + collectedOf(b), 0),
     pendingAmt: txns.filter((t) => !t.approved).reduce((s, t) => s + t.amount, 0),
     pendingCount: txns.filter((t) => !t.approved).length,
     approvedCount: txns.filter((t) => t.approved).length,
-    // Balance still to be collected across all live bookings (total − advance).
+    // Balance still to be collected across all live bookings (total − collected).
     outstanding: bookings.filter((b) => b.status !== 'Cancelled')
-      .reduce((s, b) => s + Math.max(0, (b.amount || 0) - (b.advanceAmount || 0)), 0),
+      .reduce((s, b) => s + Math.max(0, (b.amount || 0) - collectedOf(b)), 0),
   }), [txns, bookings])
 
   // Money analytics: collected vs refunded, and collected bifurcated by package.
@@ -139,8 +142,8 @@ export default function Finance() {
       .some((v) => String(v || '').toLowerCase().includes(q))
     return mStatus && mAgent && mq
   })
-  const hasFilters = !!(query || agent || filter !== 'All')
-  const clearAll = () => { setQuery(''); setAgent(''); setFilter('All') }
+  // Status is the tab strip itself, so it's not a removable chip here.
+  const hasFilters = !!(query || agent)
 
   // Pagination
   const [page, setPage] = useState(1)
@@ -186,68 +189,84 @@ export default function Finance() {
             <div className="flex flex-wrap items-center gap-2">
               {query && <Chip label="Search" value={query} onClear={() => setQuery('')} />}
               {agent && <Chip label="Logged by" value={agent} onClear={() => setAgent('')} />}
-              {filter !== 'All' && <Chip label="Status" value={filter} onClear={() => setFilter('All')} />}
-              <button type="button" onClick={clearAll} className="ml-1 inline-flex items-center gap-1.5 text-xs font-semibold text-status-urgent hover:underline">
+              <button type="button" onClick={() => { setQuery(''); setAgent('') }} className="ml-1 inline-flex items-center gap-1.5 text-xs font-semibold text-status-urgent hover:underline">
                 <DeleteIcon size={14} /> Clear
               </button>
             </div>
           )}
         </Card>
 
+        {/* Money at a glance */}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Stat label="Collected" value={inr(totals.collected)} icon="wallet" tone="text-status-won" />
+          <Stat label="Outstanding balance" value={inr(totals.outstanding)} icon="clock" tone={totals.outstanding > 0 ? 'text-status-urgent' : 'text-foreground'} />
+          <Stat label="Pending approval" value={`${totals.pendingCount} · ${inr(totals.pendingAmt)}`} icon="trend" />
+          <Stat label="Approved" value={totals.approvedCount} icon="check" />
+        </div>
+
         <Card className="overflow-hidden">
           {rows.length === 0 ? (
             <EmptyState icon="wallet" title="No transactions" hint="Payments logged by sales against a booking will appear here for approval." />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-sm">
+              <table className="w-full min-w-[1120px] text-sm">
                 <thead>
                   <tr className="border-b bg-muted/60 text-left text-[13px] font-semibold text-muted-foreground">
                     <th className="px-5 py-3">Booking</th>
                     <th className="px-3 py-3">Package</th>
-                    <th className="px-3 py-3">Logged by</th>
-                    <th className="px-3 py-3">Payment note</th>
-                    <th className="px-3 py-3">Amount</th>
+                    <th className="px-3 py-3 text-right">Total</th>
+                    <th className="px-3 py-3 text-right">Collected</th>
+                    <th className="px-3 py-3 text-right">Balance due</th>
                     <th className="px-5 py-3 text-right">Approval</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {pageRows.map((t) => (
-                    <tr key={t.id} onClick={() => navigate(`/bookings/${t.id}`)} className="cursor-pointer border-t transition-colors hover:bg-muted/40">
-                      <td className="px-5 py-3">
-                        <p className="font-mono text-xs font-semibold text-primary">{t.ref}</p>
-                        <p className="text-xs text-muted-foreground">{t.guest?.name || '—'} · {shortDate(t.createdAt)}</p>
-                      </td>
-                      <td className="px-3 py-3">
-                        <p className="font-medium">{t.pkg?.destinationCity || '—'}</p>
-                        <p className="text-xs text-muted-foreground">{t.pkg?.origin} · {t.category}</p>
-                      </td>
-                      <td className="px-3 py-3 text-muted-foreground">{t.agent || '—'}</td>
-                      <td className="px-3 py-3">
-                        <p className="max-w-[260px] truncate">{t.paymentNote}</p>
-                        {t.paymentProof?.name && (
-                          <span className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <Icon name="paperclip" size={12} />{t.paymentProof.name}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 font-semibold tabular-nums">{inr(t.amount)}</td>
-                      <td className="px-5 py-3">
-                        <div className="flex items-center justify-end gap-2">
-                          {t.approved ? (
-                            <div className="text-right">
-                              <Pill tone="won" dot>Approved</Pill>
-                              <p className="mt-1 text-[11px] text-muted-foreground">{t.approvedBy}{t.approvedAt ? ` · ${shortDate(String(t.approvedAt).slice(0, 10))}` : ''}</p>
-                            </div>
-                          ) : (
-                            <>
-                              <Pill tone="proposal" dot>Pending</Pill>
-                              <Button size="sm" icon="check" onClick={(e) => { e.stopPropagation(); approveBookingPayment(t.id) }}>Approve</Button>
-                            </>
+                  {pageRows.map((t) => {
+                    const collected = collectedOf(t)
+                    const balance = Math.max(0, (t.amount || 0) - collected)
+                    const dep = t.departureId ? departureById(t.departureId) : null
+                    return (
+                      <tr key={t.id} onClick={() => navigate(`/bookings/${t.id}`)} className="cursor-pointer border-t transition-colors hover:bg-muted/40">
+                        <td className="px-5 py-3">
+                          <p className="font-mono text-xs font-semibold text-primary">{t.ref}</p>
+                          <p className="text-xs text-muted-foreground">{t.guest?.name || '—'} · {shortDate(t.createdAt)}</p>
+                          {t.agent && <p className="text-[11px] text-muted-foreground">by {t.agent}</p>}
+                        </td>
+                        <td className="px-3 py-3">
+                          <p className="font-medium">{t.pkg?.destinationCity || '—'}</p>
+                          <p className="text-xs text-muted-foreground">{t.pkg?.origin} · {t.category}</p>
+                          {dep?.date && <p className="text-[11px] text-muted-foreground">Travel {shortDate(dep.date)}</p>}
+                        </td>
+                        <td className="px-3 py-3 text-right font-semibold tabular-nums">{inr(t.amount)}</td>
+                        <td className="px-3 py-3 text-right">
+                          <p className="font-semibold tabular-nums text-status-won">{inr(collected)}</p>
+                          {t.paymentProof?.name && (
+                            <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                              <Icon name="paperclip" size={11} /> proof
+                            </span>
                           )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          <p className={cx('font-semibold tabular-nums', balance > 0 ? 'text-status-urgent' : 'text-status-won')}>{balance > 0 ? inr(balance) : 'Paid'}</p>
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="flex items-center justify-end gap-2">
+                            {t.approved ? (
+                              <div className="text-right">
+                                <Pill tone="won" dot>Approved</Pill>
+                                <p className="mt-1 text-[11px] text-muted-foreground">{t.approvedBy}{t.approvedAt ? ` · ${shortDate(String(t.approvedAt).slice(0, 10))}` : ''}</p>
+                              </div>
+                            ) : (
+                              <>
+                                <Pill tone="proposal" dot>Pending</Pill>
+                                <Button size="sm" icon="check" onClick={(e) => { e.stopPropagation(); approveBookingPayment(t.id) }}>Approve</Button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
               <Pagination page={page} perPage={perPage} total={rows.length} onPage={setPage} onPerPage={(n) => { setPerPage(n); setPage(1) }} />

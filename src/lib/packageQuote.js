@@ -1,11 +1,36 @@
 import { inr, shortDate, timeLabel } from './format.js'
+import { airlineLogoUrl, airlineCode } from './airlines.js'
 
-// "DEL→IXZ AI 2937 (09:15–11:40)" — flight line with times when available.
-const legLine = (leg) => {
-  if (!leg) return ''
-  const route = `${leg.from || ''}→${leg.to || ''}`.replace(/^→$/, '')
-  const t = leg.departTime || leg.arriveTime ? ` (${timeLabel(leg.departTime) || '—'}–${timeLabel(leg.arriveTime) || '—'})` : ''
-  return `${route} ${leg.flightNo || ''}${t}`.trim()
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+
+// A rich flight-leg block: airline logo (or monogram), route, carrier + flight
+// no., and departure–arrival times when captured. Mirrors the portal's leg card.
+const legHtml = (leg, date, tag) => {
+  if (!leg || (!leg.from && !leg.to && !leg.flightNo)) return ''
+  const logo = airlineLogoUrl(leg.airline)
+  const mono = (airlineCode(leg.airline) || String(leg.airline || '').replace(/[^A-Za-z]/g, '').slice(0, 2) || '✈').toUpperCase()
+  const badge = logo
+    ? `<img class="alogo" src="${esc(logo)}" alt="${esc(leg.airline || '')}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/><span class="amono" style="display:none">${esc(mono)}</span>`
+    : `<span class="amono">${esc(mono)}</span>`
+  const hasTimes = leg.departTime || leg.arriveTime
+  const times = hasTimes ? `${timeLabel(leg.departTime) || '—'} <span class="arw">→</span> ${timeLabel(leg.arriveTime) || '—'}` : ''
+  return `<div class="leg">
+    <span class="abadge">${badge}</span>
+    <div class="legmeta">
+      ${tag ? `<div class="legtag">${esc(tag)}</div>` : ''}
+      <div class="legroute">${esc(leg.from || '')} <span class="arw">→</span> ${esc(leg.to || '')}</div>
+      <div class="legsub">${esc(leg.airline || '')}${leg.flightNo ? ` · ${esc(leg.flightNo)}` : ''}</div>
+    </div>
+    <div class="legtimes">${times ? `<div class="ltime">${times}</div>` : ''}${date ? `<div class="ldate">${esc(shortDate(date))}</div>` : ''}</div>
+  </div>`
+}
+
+// A round-trip flight card (outbound + return) for one departure.
+const flightCard = (d) => {
+  const out = legHtml(d.outbound, d.date, 'Outbound')
+  const ret = legHtml(d.inbound, d.returnDate, 'Return')
+  if (!out && !ret) return ''
+  return `<div class="fcard">${out}${ret}</div>`
 }
 
 const OCC = [
@@ -15,7 +40,6 @@ const OCC = [
   ['cnb', 'Child without Bed'],
   ['single', 'Single Occupancy'],
 ]
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 
 // Build a self-contained, printable HTML quotation for a package — cover image,
 // pricing grid + headline amount, departures, hotels and day-wise itinerary.
@@ -37,9 +61,16 @@ export function buildPackageQuoteHtml(pkg, deps = []) {
     return `<tr><td>${esc(label)}</td>${cells}</tr>`
   }).join('')
 
-  const depRows = deps.length
-    ? deps.map((d) => `<tr><td>${esc(shortDate(d.date))} → ${esc(shortDate(d.returnDate))}</td><td>${esc(legLine(d.outbound))}<br/><span class="muted">${esc(legLine(d.inbound))}</span></td><td class="num">${d.seatsTotal ?? ''}</td></tr>`).join('')
-    : '<tr><td colspan="3" class="muted">Departures on request.</td></tr>'
+  // Each departure → a travel-window header + a round-trip flight card.
+  const depCards = deps.length
+    ? deps.map((d) => `<div class="depblock">
+        <div class="dephdr">
+          <span class="depwin">${esc(shortDate(d.date))} <span class="arw">→</span> ${esc(shortDate(d.returnDate))}</span>
+          ${d.seatsTotal != null ? `<span class="depseats">${esc(d.seatsTotal)} seats</span>` : ''}
+        </div>
+        ${flightCard(d) || '<p class="muted" style="font-size:12.5px;padding:2px 0">Flight details on request.</p>'}
+      </div>`).join('')
+    : '<p class="muted">Departures on request.</p>'
 
   const hotelsHtml = (pkg.hotels || []).length
     ? `<h3>Hotels</h3>${(pkg.hotels || []).map((h) => `
@@ -89,6 +120,25 @@ export function buildPackageQuoteHtml(pkg, deps = []) {
   .total .box{min-width:280px}
   .total .row{display:flex;justify-content:space-between;padding:8px 0}
   .total .grand{border-top:2px solid var(--ink);margin-top:6px;padding-top:12px;font-weight:800;font-size:20px}
+  .deps{display:grid;gap:12px}
+  .depblock{border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .dephdr{display:flex;justify-content:space-between;align-items:center;background:#f9fafb;border-bottom:1px solid var(--line);padding:10px 14px}
+  .depwin{font-weight:700;font-size:13px}
+  .depseats{font-size:11px;font-weight:700;color:var(--muted);background:#eef2f5;border-radius:20px;padding:3px 10px}
+  .fcard{display:grid}
+  .leg{display:flex;align-items:center;gap:12px;padding:11px 14px}
+  .leg + .leg{border-top:1px dashed var(--line)}
+  .abadge{width:34px;height:34px;flex:0 0 34px;display:flex;align-items:center;justify-content:center}
+  .alogo{width:34px;height:34px;object-fit:contain;border-radius:8px;border:1px solid var(--line);background:#fff}
+  .amono{width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:8px;background:#111;color:#fff;font-weight:800;font-size:11px}
+  .legmeta{flex:1;min-width:0}
+  .legtag{font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700}
+  .legroute{font-weight:700;font-size:14px;letter-spacing:.02em}
+  .legsub{font-size:11.5px;color:var(--muted)}
+  .legtimes{text-align:right;white-space:nowrap}
+  .ltime{font-weight:700;font-size:13px;font-variant-numeric:tabular-nums}
+  .ldate{font-size:11px;color:var(--muted)}
+  .arw{color:var(--muted);font-weight:600}
   .hotelcat{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:8px}
   .hcat{font-weight:700;font-size:13px;margin-bottom:6px}
   .hrow{display:flex;gap:12px;font-size:13px;padding:3px 0}
@@ -129,7 +179,7 @@ export function buildPackageQuoteHtml(pkg, deps = []) {
     </div>
   </div>
 
-  ${pkg.blurb ? `<p class="muted" style="font-size:13px;margin-bottom:6px">${esc(pkg.blurb)}</p>` : ''}
+  ${pkg.blurb && pkg.blurb.trim().length <= 260 ? `<p class="muted" style="font-size:13px;margin-bottom:6px">${esc(pkg.blurb)}</p>` : ''}
 
   <h3>Per-person pricing (from)</h3>
   <table>
@@ -142,11 +192,8 @@ export function buildPackageQuoteHtml(pkg, deps = []) {
     <div class="row grand"><span>Final amount</span><span>${fromAdult ? esc(inr(fromAdult)) : 'On request'}</span></div>
   </div></div>
 
-  <h3>Departure dates</h3>
-  <table>
-    <thead><tr><th>Travel window</th><th>Flight</th><th class="num">Seats</th></tr></thead>
-    <tbody>${depRows}</tbody>
-  </table>
+  <h3>Departures &amp; flights</h3>
+  <div class="deps">${depCards}</div>
 
   ${hotelsHtml}
   ${itinHtml}
@@ -216,8 +263,8 @@ export function buildGuestQuoteHtml(pkg, sel = {}) {
     : ''
 
   const travelWindow = departure ? `${esc(shortDate(departure.date))} → ${esc(shortDate(departure.returnDate))}` : 'On request'
-  const flightLine = departure
-    ? `${esc(legLine(departure.outbound))} · ${esc(legLine(departure.inbound))}`
+  const flightsHtml = departure && flightCard(departure)
+    ? `<h3>Flights</h3><div class="depblock">${flightCard(departure)}</div>`
     : ''
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"/>
@@ -251,6 +298,21 @@ export function buildGuestQuoteHtml(pkg, sel = {}) {
   .hrow{display:flex;gap:12px;font-size:13px;padding:5px 0;border-bottom:1px solid var(--line)}
   .hcity{min-width:130px;color:var(--muted);font-weight:600}
   .hopt{flex:1}
+  .depblock{border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .fcard{display:grid}
+  .leg{display:flex;align-items:center;gap:12px;padding:11px 14px}
+  .leg + .leg{border-top:1px dashed var(--line)}
+  .abadge{width:34px;height:34px;flex:0 0 34px;display:flex;align-items:center;justify-content:center}
+  .alogo{width:34px;height:34px;object-fit:contain;border-radius:8px;border:1px solid var(--line);background:#fff}
+  .amono{width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:8px;background:#111;color:#fff;font-weight:800;font-size:11px}
+  .legmeta{flex:1;min-width:0}
+  .legtag{font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700}
+  .legroute{font-weight:700;font-size:14px}
+  .legsub{font-size:11.5px;color:var(--muted)}
+  .legtimes{text-align:right;white-space:nowrap}
+  .ltime{font-weight:700;font-size:13px;font-variant-numeric:tabular-nums}
+  .ldate{font-size:11px;color:var(--muted)}
+  .arw{color:var(--muted);font-weight:600}
   ol.itin{list-style:none;display:grid;gap:12px}
   ol.itin li{display:flex;gap:14px}
   .dnum{min-width:64px;font-weight:700;font-size:12px;color:#118d57;padding-top:2px}
@@ -282,7 +344,7 @@ export function buildGuestQuoteHtml(pkg, sel = {}) {
     <div>
       <div class="lbl">Travel</div>
       <div>${travelWindow}</div>
-      <div class="muted">${flightLine}</div>
+      <div class="muted">${esc(pkg.durationLabel || '')}</div>
     </div>
     <div>
       <div class="lbl">Guest</div>
@@ -305,6 +367,7 @@ export function buildGuestQuoteHtml(pkg, sel = {}) {
     <div class="row grand"><span>Final amount</span><span>${esc(inr(amount))}</span></div>
   </div></div>
 
+  ${flightsHtml}
   ${hotelsHtml}
   ${itinHtml}
   ${inclExcl}

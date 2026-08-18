@@ -46,7 +46,7 @@ export default function AppTopBar() {
             title="Team"
             className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
-            <Icon name="users" size={18} />
+            <Icon name="userGroup" size={18} />
           </button>
         )}
 

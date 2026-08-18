@@ -118,6 +118,8 @@ export default function InventoryDetail() {
 
   const pkg = inv.packageId ? packageById(inv.packageId) : null
   const isHotel = (inv.type || 'airline') === 'hotel'
+  // Clean, human ID: FL-<n> (flights) / HT-<n> (hotels), like PKG for packages.
+  const invLabel = `${isHotel ? 'HT' : 'FL'}-${String(inv.inventoryId || inv.id || '').replace(/\D/g, '') || inv.id}`
   const showRelease = inv.available > 0 && inv.releaseDaysLeft != null && inv.releaseDaysLeft <= 7 &&
     inv.status === 'Active'
 
@@ -165,9 +167,9 @@ export default function InventoryDetail() {
   return (
     <>
       <TopBar
-        title={inv.inventoryId}
-        crumbLabel={inv.inventoryId}
-        subtitle={`${inv.airline} · ${inv.sector}`}
+        title={invLabel}
+        crumbLabel={invLabel}
+        subtitle={`${inv.inventoryId} · ${inv.airline} · ${inv.sector}`}
       />
 
       {/* Release inventory — quantity + note; logged to the block's history */}

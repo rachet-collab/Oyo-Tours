@@ -75,7 +75,8 @@ export default function Bookings() {
   const [perPage, setPerPage] = useState(10)
   useEffect(() => { setPage(1) }, [filter, query, agent, pkgFilter])
   const pageRows = useMemo(() => shown.slice((page - 1) * perPage, page * perPage), [shown, page, perPage])
-  const hasFilters = filter !== 'All' || !!query.trim() || !!agent
+  // Status is the tab itself, so it isn't shown as a removable chip below.
+  const hasFilters = !!query.trim() || !!agent
 
   return (
     <>
@@ -125,13 +126,13 @@ export default function Bookings() {
           </div>
         </div>
 
-        {/* Active-filter chips (the tab counts already show totals) */}
+        {/* Active-filter chips — status lives in the tab strip, so only the
+            search / agent filters appear here. */}
         {hasFilters && (
           <div className="flex flex-wrap items-center gap-2">
-            {filter !== 'All' && <Chip label="Status" value={filter} onClear={() => setFilter('All')} />}
             {agent && <Chip label="Logged by" value={agent} onClear={() => setAgent('')} />}
             {query.trim() && <Chip label="Search" value={query} onClear={() => setQuery('')} />}
-            <button type="button" onClick={() => { setFilter('All'); setQuery(''); setAgent('') }} className="ml-1 inline-flex items-center gap-1.5 text-xs font-semibold text-status-urgent hover:underline">
+            <button type="button" onClick={() => { setQuery(''); setAgent('') }} className="ml-1 inline-flex items-center gap-1.5 text-xs font-semibold text-status-urgent hover:underline">
               <DeleteIcon size={14} /> Clear
             </button>
           </div>

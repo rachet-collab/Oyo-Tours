@@ -22,6 +22,14 @@ const CITY = {
 }
 const cityName = (code) => CITY[String(code || '').toUpperCase()] || code || ''
 
+// A clean, human inventory ID: FL-<n> for flights, HT-<n> for hotels (the
+// "FL"/"HT" initials mirror "PKG" for packages). The number is taken from the
+// record's existing id so it stays stable — no more confusing airline-code IDs.
+const invLabel = (i) => {
+  const num = String(i.inventoryId || i.id || '').replace(/\D/g, '') || String(i.id || '')
+  return `${(i.type || 'airline') === 'hotel' ? 'HT' : 'FL'}-${num}`
+}
+
 function Stat({ label, value, icon }) {
   return (
     <Card className="flex items-center gap-3 p-4">
@@ -129,7 +137,7 @@ export default function InventoryList({ type = 'airline' }) {
             {/* Inventory is seeded only from packages — the only action here is the
                 Airlines registry link (flights). */}
             {!isHotelView && (
-              <Button variant="outline" size="sm" icon="plane" onClick={() => navigate('/airlines')}>Airlines</Button>
+              <Button variant="outline" size="sm" icon="booking" onClick={() => navigate('/airlines')}>Airlines</Button>
             )}
           </div>
         )}
@@ -157,12 +165,14 @@ export default function InventoryList({ type = 'airline' }) {
                 </Select>
               </div>
             )}
-            <div className="w-40">
-              <Select value={month} onChange={(e) => setMonth(e.target.value)} title={isHotelView ? 'Check-in month' : 'Departure month'}>
-                <option value="">All months</option>
-                {monthOptions.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
-              </Select>
-            </div>
+            {!isHotelView && (
+              <div className="w-40">
+                <Select value={month} onChange={(e) => setMonth(e.target.value)} title="Departure month">
+                  <option value="">All months</option>
+                  {monthOptions.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+                </Select>
+              </div>
+            )}
           </div>
 
           {hasFilters && (
@@ -204,17 +214,18 @@ export default function InventoryList({ type = 'airline' }) {
             <EmptyState icon="boxes" title="No inventory found" hint={isHotelView ? 'Hotel room blocks are created from packages — add hotels to a package and they’ll appear here.' : 'Flight blocks are created from packages — add flights to a package departure and they’ll appear here.'} />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1040px] text-sm">
+              <table className="w-full min-w-[1280px] text-sm">
                 <thead>
                   <tr className="border-b bg-muted/60 text-left text-[13px] font-semibold text-muted-foreground">
                     <th className="w-10 px-4 py-3">
                       <input type="checkbox" checked={allOnPage} onChange={toggleAllOnPage} aria-label="Select all"
                         className="h-4 w-4 cursor-pointer rounded border-border accent-foreground" />
                     </th>
-                    <th className="px-5 py-3">Inventory</th>
+                    <th className="px-5 py-3">Inventory ID</th>
                     <th className="px-3 py-3">Package</th>
                     <th className="px-3 py-3">Route / stay</th>
-                    <th className="px-3 py-3">Travel dates</th>
+                    <th className="px-3 py-3">{isHotelView ? 'Check-in' : 'Departure date'}</th>
+                    <th className="px-3 py-3">{isHotelView ? 'Check-out' : 'Return date'}</th>
                     <th className="px-3 py-3">{unitLabel}</th>
                     <th className="px-3 py-3">Vendors</th>
                     <th className="px-5 py-3" aria-label="Actions" />
@@ -239,7 +250,7 @@ export default function InventoryList({ type = 'airline' }) {
                               <InventoryImage inv={i} size={38} />
                             )}
                             <div className="min-w-0">
-                              <p className="font-mono text-xs font-semibold">{i.inventoryId}</p>
+                              <p className="font-mono text-xs font-semibold">{invLabel(i)}</p>
                               <p className="text-xs text-muted-foreground">{i.airline}</p>
                             </div>
                           </div>
@@ -278,9 +289,13 @@ export default function InventoryList({ type = 'airline' }) {
                           )}
                         </td>
                         <td>
-                          <p className="font-medium">{shortDate(i.departureDate)}{i.departTime ? <span className="font-normal text-muted-foreground"> · {timeLabel(i.departTime)}</span> : null}</p>
-                          <p className="text-xs text-muted-foreground">→ {shortDate(i.returnDate) || '—'}{i.returnDepartTime ? ` · ${timeLabel(i.returnDepartTime)}` : ''}</p>
+                          <p className="font-medium">{shortDate(i.departureDate) || '—'}</p>
+                          {i.departTime ? <p className="text-xs text-muted-foreground">{timeLabel(i.departTime)}{i.arriveTime ? ` – ${timeLabel(i.arriveTime)}` : ''}</p> : null}
                           {hot && <p className="mt-0.5 text-xs font-semibold text-status-urgent">Release in {Math.max(0, i.releaseDaysLeft)}d</p>}
+                        </td>
+                        <td>
+                          <p className="font-medium">{shortDate(i.returnDate) || '—'}</p>
+                          {i.returnDepartTime ? <p className="text-xs text-muted-foreground">{timeLabel(i.returnDepartTime)}{i.returnArriveTime ? ` – ${timeLabel(i.returnArriveTime)}` : ''}</p> : null}
                         </td>
                         <td>
                           <SeatMeter available={i.available} total={i.totalSeats} />

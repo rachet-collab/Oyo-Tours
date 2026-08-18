@@ -26,6 +26,14 @@ import { blockCities, hotelOptionsForCity } from '../lib/rooming.js'
 const cx = (...c) => c.filter(Boolean).join(' ')
 const COUNTRY_CODES = ['+91', '+1', '+44', '+971', '+65', '+66', '+62', '+94', '+977', '+60']
 const daysTo = (iso) => (iso ? Math.round((new Date(iso + 'T00:00:00') - new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00')) / 86400000) : null)
+
+// Left-panel tabs for the booking detail page.
+const BOOKING_TABS = [
+  { key: 'overview', label: 'Overview', icon: 'wallet' },
+  { key: 'flights', label: 'Flights', icon: 'booking' },
+  { key: 'travellers', label: 'Travellers', icon: 'userGroup' },
+  { key: 'activity', label: 'Activity', icon: 'clock' },
+]
 // Log timestamp: "10 Aug 2026 · 4:32 PM" when the value carries a time, else date only.
 const logWhen = (at) => {
   if (!at) return ''
@@ -63,6 +71,7 @@ export default function BookingDetail() {
   const [balProof, setBalProof] = useState(null)
   const balProofRef = useRef(null)
   const [allUpdatesOpen, setAllUpdatesOpen] = useState(false)
+  const [tab, setTab] = useState('overview')
 
   if (!b) {
     return (
@@ -129,28 +138,51 @@ export default function BookingDetail() {
         ) : null}
       />
 
-      <div className="grid gap-6 px-4 py-5 sm:px-6 lg:px-8 lg:py-6 lg:grid-cols-3">
-        <div className="grid gap-6 lg:col-span-2">
-          {/* Trip */}
-          <Card className="overflow-hidden">
-            {p && <CityCover url={p.coverUrl} city={p.destinationCity} className="h-32" rounded="rounded-t-2xl" />}
-            <div className="p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold">{p?.name}</h2>
-                  <p className="text-sm text-muted-foreground">{p?.origin} · {b.category} · {p?.durationLabel}</p>
-                </div>
-                <StatusPill status={b.status} />
+      <div className="grid gap-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
+        {/* Package header — always visible above the tabs */}
+        <Card className="overflow-hidden">
+          {p && <CityCover url={p.coverUrl} city={p.destinationCity} className="h-32" rounded="rounded-t-2xl" />}
+          <div className="flex flex-wrap items-center justify-between gap-3 p-5">
+            <div className="flex min-w-0 items-center gap-3">
+              <Avatar name={g?.name} size={40} />
+              <div className="min-w-0">
+                <h2 className="truncate text-lg font-bold">{p?.name}</h2>
+                <p className="text-sm text-muted-foreground">{p?.origin} · {b.category} · {p?.durationLabel}</p>
               </div>
-              {d && (
-                <div className="mt-4 grid gap-3 rounded-xl border p-4 sm:grid-cols-2">
-                  <FlightLeg label="Outbound" f={d.outbound} date={d.date} />
-                  <FlightLeg label="Return" f={d.inbound} date={d.returnDate} />
-                </div>
-              )}
             </div>
-          </Card>
+            <StatusPill status={b.status} />
+          </div>
+        </Card>
 
+        {/* Tabs */}
+        <div className="-mb-px flex flex-wrap items-center gap-1 overflow-x-auto border-b">
+          {BOOKING_TABS.map((t) => (
+            <button key={t.key} type="button" onClick={() => setTab(t.key)}
+              className={cx('flex shrink-0 items-center gap-2 border-b-2 px-3.5 py-2.5 text-sm font-semibold transition-colors',
+                tab === t.key ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}>
+              <Icon name={t.icon} size={16} /> {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ---------- Flights tab ---------- */}
+        {tab === 'flights' && (
+          <Card className="p-5">
+            <Eyebrow className="mb-3">Flight itinerary</Eyebrow>
+            {d ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <FlightLeg label="Outbound" f={d.outbound} date={d.date} />
+                <FlightLeg label="Return" f={d.inbound} date={d.returnDate} />
+              </div>
+            ) : (
+              <p className="rounded-xl border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">No flight details on this booking.</p>
+            )}
+          </Card>
+        )}
+
+        {/* ---------- Travellers tab ---------- */}
+        {tab === 'travellers' && (
+        <div className="grid gap-5">
           {/* Occupancy */}
           <Card className="p-5">
             <Eyebrow className="mb-3">Occupancy · {b.seats} pax</Eyebrow>
@@ -287,7 +319,13 @@ export default function BookingDetail() {
               </div>
             )}
           </Card>
+        </div>
+        )}
 
+        {/* ---------- Overview tab ---------- */}
+        {tab === 'overview' && (
+        <div className="grid gap-5 lg:grid-cols-3">
+          <div className="grid gap-5 lg:col-span-2">
           {/* Cancelled — shown to everyone with a reason & who initiated it */}
           {b.status === 'Cancelled' && (
             <Card className="border-status-urgent/30 bg-status-urgent-bg/30 p-5">
@@ -403,26 +441,7 @@ export default function BookingDetail() {
           {/* Admin: payment & status */}
           {isAdmin && b.status !== 'Cancelled' && (
             <Card className="p-5">
-              <Eyebrow className="mb-3">Payment &amp; status</Eyebrow>
-
-              {/* Money breakdown — total, advance collected, balance due */}
-              <div className="mb-4 grid gap-2 rounded-xl border p-4">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Total</span>
-                  <span className="font-bold tabular-nums">{inr(b.amount)}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Collected</span>
-                  <span className="font-semibold tabular-nums text-status-won">{inr(collected)}</span>
-                </div>
-                <div className="flex items-center justify-between border-t pt-2 text-sm">
-                  <span className="font-semibold">Balance due</span>
-                  <span className={cx('text-lg font-bold tabular-nums', balanceDue > 0 ? 'text-status-urgent' : 'text-status-won')}>{inr(balanceDue)}</span>
-                </div>
-                {balanceDue > 0 && balanceDueDate && (
-                  <p className="text-xs font-medium text-status-urgent">Balance due by {shortDate(balanceDueDate)} · {bdDays}d before travel</p>
-                )}
-              </div>
+              <Eyebrow className="mb-3">Payment</Eyebrow>
 
               {b.status !== 'Confirmed' ? (
                 <div className="rounded-xl border border-status-won/30 bg-status-won-bg/40 p-4">
@@ -511,11 +530,10 @@ export default function BookingDetail() {
             </Card>
           )}
 
-        </div>
+          </div>
 
-        {/* Summary + status timeline */}
-        <aside className="lg:col-span-1">
-          <div className="grid gap-6 lg:sticky lg:top-24">
+          {/* Overview right column — key details, money & approval */}
+          <div className="grid gap-5 lg:col-span-1">
             <Card className="p-5">
               <div className="flex items-center gap-3">
                 <Avatar name={g?.name} size={44} />
@@ -572,22 +590,20 @@ export default function BookingDetail() {
                 <Button icon="check" className="mt-3 w-full" onClick={() => approveBookingPayment(b.id)}>Approve payment</Button>
               ) : null}
             </Card>
-
-            {/* Status timeline — most recent few, with a "View all" modal */}
-            <Card className="p-5">
-              <div className="mb-4 flex items-center justify-between">
-                <Eyebrow>Status updates</Eyebrow>
-                <span className="text-xs font-semibold text-muted-foreground">{timeline.length}</span>
-              </div>
-              <TimelineList items={timeline.slice(-5)} logWhen={logWhen} />
-              {timeline.length > 5 && (
-                <Button variant="outline" size="sm" className="mt-4 w-full" onClick={() => setAllUpdatesOpen(true)}>
-                  View all {timeline.length} updates
-                </Button>
-              )}
-            </Card>
           </div>
-        </aside>
+        </div>
+        )}
+
+        {/* ---------- Activity tab ---------- */}
+        {tab === 'activity' && (
+          <Card className="p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <Eyebrow>Status updates</Eyebrow>
+              <span className="text-xs font-semibold text-muted-foreground">{timeline.length} update{timeline.length === 1 ? '' : 's'}</span>
+            </div>
+            <TimelineList items={timeline} logWhen={logWhen} />
+          </Card>
+        )}
       </div>
 
       <TravellerAllocationModal
@@ -605,11 +621,6 @@ export default function BookingDetail() {
         onClose={() => setCancelOpen(false)}
         onConfirm={(type, reason) => { cancelBooking(b.id, type, reason); setCancelOpen(false) }}
       />
-      <Modal open={allUpdatesOpen} onClose={() => setAllUpdatesOpen(false)} title="Status updates" subtitle={`${timeline.length} updates on ${b.ref}`} width="max-w-lg">
-        <div className="max-h-[65vh] overflow-y-auto pr-1">
-          <TimelineList items={timeline} logWhen={logWhen} />
-        </div>
-      </Modal>
     </>
   )
 }
@@ -847,28 +858,40 @@ function CancelBookingModal({ open, booking, pkg, travelDate, onClose, onConfirm
 
 function FlightLeg({ label, f, date }) {
   const dur = flightDuration(f.departTime, f.arriveTime)
+  const hasTimes = f.departTime || f.arriveTime
   return (
-    <div>
-      <Eyebrow>{label}</Eyebrow>
-      <div className="mt-1.5 flex items-center gap-2.5">
-        <InventoryImage inv={{ type: 'airline', airline: f.airline }} size={30} rounded="rounded-lg" className="shrink-0" />
-        <div className="min-w-0">
-          <p className="flex items-center gap-1.5 font-semibold leading-tight">
-            {f.from} <Icon name="arrowRight" size={13} className="text-muted-foreground" /> {f.to}
+    <div className="rounded-xl border bg-card p-3.5">
+      <div className="mb-2.5 flex items-center justify-between">
+        <Eyebrow>{label}</Eyebrow>
+        <span className="text-[11px] font-medium text-muted-foreground">{shortDate(date)}</span>
+      </div>
+      <div className="flex items-center gap-2.5">
+        <InventoryImage inv={{ type: 'airline', airline: f.airline }} size={34} rounded="rounded-lg" className="shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 text-[15px] font-bold leading-tight">
+            {f.from || '—'} <Icon name="arrowRight" size={13} className="text-muted-foreground" /> {f.to || '—'}
           </p>
-          <p className="text-xs font-medium text-muted-foreground">{f.airline} {f.flightNo}</p>
+          <p className="text-xs font-medium text-muted-foreground">{f.airline || '—'}{f.flightNo ? ` · ${f.flightNo}` : ''}</p>
         </div>
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-        <span className="text-muted-foreground">{shortDate(date)}</span>
-        {(f.departTime || f.arriveTime) && (
-          <span className="flex items-center gap-1 font-semibold tabular-nums">
-            {f.departTime ? timeLabel(f.departTime) : '—'}
-            <Icon name="arrowRight" size={11} className="text-muted-foreground" />
-            {f.arriveTime ? timeLabel(f.arriveTime) : '—'}
-            {dur && <span className="font-medium text-muted-foreground">· {dur}</span>}
+      {/* Times row — Departs · duration · Arrives */}
+      <div className="mt-3 flex items-stretch justify-between gap-2 rounded-lg bg-muted/50 px-3 py-2">
+        <div>
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Departs</p>
+          <p className="text-sm font-bold tabular-nums">{f.departTime ? timeLabel(f.departTime) : '—'}</p>
+        </div>
+        <div className="flex flex-1 flex-col items-center justify-center">
+          <span className="text-[10px] font-medium text-muted-foreground">{dur || (hasTimes ? '' : 'Time not set')}</span>
+          <span className="mt-1 flex w-full items-center gap-1">
+            <span className="h-px flex-1 bg-muted-foreground/25" />
+            <Icon name="booking" size={12} className="text-muted-foreground" />
+            <span className="h-px flex-1 bg-muted-foreground/25" />
           </span>
-        )}
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Arrives</p>
+          <p className="text-sm font-bold tabular-nums">{f.arriveTime ? timeLabel(f.arriveTime) : '—'}</p>
+        </div>
       </div>
     </div>
   )

@@ -34,8 +34,17 @@ export default function TopBar({ title, subtitle, actions, crumbLabel, tabs }) {
 
   return (
     <div className="border-b bg-background px-4 py-4 sm:px-6 lg:px-8">
-      {/* Breadcrumb flow */}
-      <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1.5 text-xs">
+      {/* Title + actions come first */}
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0">
+          <h1 className="truncate text-xl font-bold leading-tight tracking-tight">{title}</h1>
+          {subtitle && <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>}
+        </div>
+        {actions && <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">{actions}</div>}
+      </div>
+
+      {/* Breadcrumb flow — sits below the heading & subheading */}
+      <nav aria-label="Breadcrumb" className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
         {crumbs.map((c, i) => {
           const last = i === crumbs.length - 1
           return (
@@ -51,17 +60,7 @@ export default function TopBar({ title, subtitle, actions, crumbLabel, tabs }) {
         })}
       </nav>
 
-      {/* Title + actions */}
-      <div className="mt-1.5 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <div className="min-w-0">
-          <h1 className="truncate text-xl font-bold leading-tight tracking-tight">{title}</h1>
-          {subtitle && <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>}
-        </div>
-        {actions && <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">{actions}</div>}
-      </div>
-
-      {/* Optional tab / filter strip that sits directly below the heading &
-          subheading (e.g. Active/Inactive, All/Pending/Approved). */}
+      {/* Optional tab / filter strip (e.g. Active/Inactive, All/Pending/Approved). */}
       {tabs && <div className="mt-3">{tabs}</div>}
     </div>
   )

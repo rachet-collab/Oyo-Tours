@@ -20,6 +20,10 @@ import sPaperclip from '../../assets/ui/paperclip.svg?raw'
 import sShield from '../../assets/ui/shield.svg?raw'
 import sFile from '../../assets/ui/file.svg?raw'
 import sSparkle from '../../assets/ui/sparkle.svg?raw'
+// Duotone icons (currentColor) — team, airlines/booking, notifications.
+import sUserGroup from '../../assets/ui/icUserGroup.svg?raw'
+import sBooking from '../../assets/ui/icBooking.svg?raw'
+import sBell from '../../assets/ui/icBell.svg?raw'
 
 const SOLID = {
   search: sSearch, plus: sPlus, x: sX, check: sCheck,
@@ -27,6 +31,7 @@ const SOLID = {
   download: sDownload, filter: sFilter, clock: sClock, calendar: sCalendar,
   trend: sTrend, mail: sMail, phone: sPhone, users: sUsers, mapPin: sMapPin,
   edit: sEdit, paperclip: sPaperclip, shield: sShield, file: sFile, sparkle: sSparkle,
+  userGroup: sUserGroup, booking: sBooking, bell: sBell,
 }
 
 // Lightweight stroke icon set (lucide-style), single component keyed by name.

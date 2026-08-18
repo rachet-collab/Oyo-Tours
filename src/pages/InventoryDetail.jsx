@@ -602,7 +602,13 @@ export default function InventoryDetail() {
                 >
                   Release {L.unit}s
                 </Button>
-                <Button variant="outline" icon="edit" onClick={() => navigate(`${L.route}/${inv.id}/edit`)}>Edit</Button>
+                {/* Inventory is derived from the package — edit it at the source. */}
+                <Button variant="outline" icon="edit"
+                  onClick={() => (inv.packageId
+                    ? navigate(`/packages/${inv.packageId}/edit`, { state: { returnTo: `${L.route}/${inv.id}` } })
+                    : navigate(`${L.route}/${inv.id}/edit`))}>
+                  Edit
+                </Button>
               </div>
             </Card>
 

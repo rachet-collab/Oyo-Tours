@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import TopBar from '../components/layout/TopBar.jsx'
 import Icon from '../components/ui/Icon.jsx'
 import InventoryImage from '../components/InventoryImage.jsx'
@@ -47,6 +47,9 @@ function fileToDataUrl(file, max = 1100, quality = 0.82) {
 export default function PackageForm() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
+  // When opened from an inventory block's "Edit", return there after save/cancel.
+  const returnTo = location.state?.returnTo || null
   const { packageById, addPackage, updatePackage, addDeparture, departuresForPackage, updateInventory, termsTemplates, saveTermsTemplate, deleteTermsTemplate } = useApp()
   const existing = id ? packageById(id) : null
   const editing = Boolean(existing)
@@ -390,7 +393,7 @@ export default function PackageForm() {
       if (d.airlineInventoryId) updateInventory(d.airlineInventoryId, { packageId: pkgId })
       if (d.hotelInventoryId) updateInventory(d.hotelInventoryId, { packageId: pkgId })
     })
-    navigate(`/packages/${pkgId}`)
+    navigate(returnTo || `/packages/${pkgId}`)
   }
 
   return (
@@ -400,7 +403,7 @@ export default function PackageForm() {
         subtitle={editing ? 'Update this package’s details.' : 'Create a new fixed-departure product.'}
         actions={
           <>
-            <Button variant="ghost" onClick={() => navigate(-1)}>
+            <Button variant="ghost" onClick={() => (returnTo ? navigate(returnTo) : navigate(-1))}>
               Cancel
             </Button>
             <Button icon="check" disabled={!canSave || busy} onClick={save}>
@@ -1031,6 +1034,15 @@ function DeparturesEditor({ view = 'departures', cats, deps, setDeps, existingDe
       return n
     })
   }
+  // Bulk-uploaded flights → staged departures. Each gets an empty pricing grid
+  // for the package's categories (filled in Pricing configuration below).
+  const addImportedFlights = (rows) => {
+    const withPricing = (rows || []).filter((d) => d.date).map((d) => ({
+      ...d,
+      pricing: Object.fromEntries(cats.map((c) => [c, Object.fromEntries(OCCUPANCY.map((o) => [o.key, '']))])),
+    }))
+    if (withPricing.length) setDeps((ds) => [...ds, ...withPricing])
+  }
   const add = () => {
     if (!draft.date || !draft.seatsTotal || !draft.outbound.flightNo) return
     setDeps((ds) => [...ds, draft])
@@ -1240,6 +1252,7 @@ function DeparturesEditor({ view = 'departures', cats, deps, setDeps, existingDe
         {!showNew ? (
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" icon="plus" onClick={() => setShowNew(true)}>Add departures</Button>
+            <Button variant="outline" size="sm" icon="upload" onClick={() => setBulkOpen(true)}>Bulk upload flights</Button>
           </div>
         ) : (
         <div className="mt-4 rounded-xl border bg-muted/30 p-4">
@@ -1315,8 +1328,8 @@ function DeparturesEditor({ view = 'departures', cats, deps, setDeps, existingDe
       </Card>
       )}
 
-      {/* Flight-inventory bulk upload (modal) */}
-      <InventoryImport type="airline" open={bulkOpen} onClose={() => setBulkOpen(false)} />
+      {/* Bulk upload flights → staged as departures on this package (not standalone inventory). */}
+      <InventoryImport type="airline" open={bulkOpen} onClose={() => setBulkOpen(false)} onImport={addImportedFlights} />
 
       {/* ---------------- Pricing configuration ---------------- */}
       {view === 'pricing' && (

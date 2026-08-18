@@ -16,7 +16,7 @@ const isEntity = (seg) => !SEG_LABEL[seg]
 // The page header: a clickable breadcrumb trail of the flow the user is in,
 // then the page title/subtitle and any page-level actions. The global utility
 // bar (notifications, team, user) lives once in AppLayout, above this.
-export default function TopBar({ title, subtitle, actions, crumbLabel }) {
+export default function TopBar({ title, subtitle, actions, crumbLabel, tabs }) {
   const { pathname } = useLocation()
   const segs = pathname.split('/').filter(Boolean)
 
@@ -59,6 +59,10 @@ export default function TopBar({ title, subtitle, actions, crumbLabel }) {
         </div>
         {actions && <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">{actions}</div>}
       </div>
+
+      {/* Optional tab / filter strip that sits directly below the heading &
+          subheading (e.g. Active/Inactive, All/Pending/Approved). */}
+      {tabs && <div className="mt-3">{tabs}</div>}
     </div>
   )
 }

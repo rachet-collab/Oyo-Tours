@@ -407,11 +407,14 @@ export function AppProvider({ children }) {
     })
 
     let signedInId = null
-    const unsub = onAuthChange((user) => {
+    const unsub = onAuthChange((event, user) => {
       if (!active) return
       if (user) {
         if (user.id !== signedInId) { signedInId = user.id; dispatch({ type: 'LOGIN', user }); hydrateData() }
-      } else {
+      } else if (event === 'SIGNED_OUT') {
+        // Only a genuine sign-out clears the session/cache. Transient null
+        // sessions (e.g. during INITIAL_SESSION / token refresh) are ignored so
+        // they can't wipe a signed-in user's loaded data on refresh.
         signedInId = null
         try { localStorage.removeItem(CORE_KEY) } catch { /* ignore */ }
         dispatch({ type: 'LOGOUT' })

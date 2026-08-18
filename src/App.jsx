@@ -22,6 +22,7 @@ const InventoryForm = lazy(() => import('./pages/InventoryForm.jsx'))
 const BulkUpload = lazy(() => import('./pages/BulkUpload.jsx'))
 const Airlines = lazy(() => import('./pages/Airlines.jsx'))
 const Finance = lazy(() => import('./pages/Finance.jsx'))
+const Notifications = lazy(() => import('./pages/Notifications.jsx'))
 const FinanceAnalytics = lazy(() => import('./pages/FinanceAnalytics.jsx'))
 const Vendors = lazy(() => import('./pages/Vendors.jsx'))
 const Operations = lazy(() => import('./pages/Operations.jsx'))
@@ -62,6 +63,8 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route element={<AppLayout />}>
             <Route path="/" element={<Home />} />
+            {/* Notifications — available to every signed-in user. */}
+            <Route path="/notifications" element={<Notifications />} />
 
             {/* Ops back-office — Admin & Operations */}
             <Route path="/overview" element={<Navigate to="/inventory" replace />} />

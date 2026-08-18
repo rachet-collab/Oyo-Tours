@@ -116,27 +116,26 @@ export default function InventoryList({ type = 'airline' }) {
       <TopBar
         title={isHotelView ? 'Hotel inventory' : 'Flight inventory'}
         subtitle={isHotelView ? 'Hotel room blocks — allocation, vendors & deadlines.' : 'Airline seat blocks — allocation, vendors & deadlines.'}
+        tabs={(
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <FilterTabs
+              value={life}
+              onChange={setLife}
+              tabs={[
+                { key: 'active', label: 'Active', count: lifeCounts.active, tone: 'won' },
+                { key: 'inactive', label: 'Inactive', count: lifeCounts.inactive, tone: 'urgent' },
+              ]}
+            />
+            {/* Inventory is seeded only from packages — the only action here is the
+                Airlines registry link (flights). */}
+            {!isHotelView && (
+              <Button variant="outline" size="sm" icon="plane" onClick={() => navigate('/airlines')}>Airlines</Button>
+            )}
+          </div>
+        )}
       />
 
       <div className="grid gap-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
-        <FilterTabs
-          value={life}
-          onChange={setLife}
-          tabs={[
-            { key: 'active', label: 'Active', count: lifeCounts.active, tone: 'won' },
-            { key: 'inactive', label: 'Inactive', count: lifeCounts.inactive, tone: 'urgent' },
-          ]}
-        />
-
-        {/* Actions — both flight and hotel inventory are seeded only from
-            packages, so there is no manual add or bulk-upload entry point here.
-            Flights keep the Airlines registry link. */}
-        {!isHotelView && (
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button variant="outline" icon="plane" onClick={() => navigate('/airlines')}>Airlines</Button>
-          </div>
-        )}
-
         {/* Filter panel (search + dropdowns + active-filter chips) */}
         <Card className="grid gap-3 p-4">
           <div className="flex flex-wrap items-center gap-2">

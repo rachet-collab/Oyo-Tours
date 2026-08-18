@@ -52,10 +52,18 @@ export async function adminUsers(body) {
 }
 
 // Subscribe to auth changes; returns an unsubscribe function.
+// IMPORTANT: Supabase holds an internal lock while the onAuthStateChange
+// callback runs, and awaiting other Supabase calls (the profile fetch, data
+// loads) inside it can deadlock or race — which intermittently left the portal
+// hydrated with empty data on refresh. So we defer all Supabase work out of the
+// callback with setTimeout(0), and pass the event through so the store can tell
+// a real sign-out from a transient null session.
 export function onAuthChange(cb) {
   if (!hasSupabase) return () => {}
-  const { data } = supabase.auth.onAuthStateChange(async (_event, session) => {
-    cb(await userFromSession(session))
+  const { data } = supabase.auth.onAuthStateChange((event, session) => {
+    setTimeout(async () => {
+      try { cb(event, await userFromSession(session)) } catch (e) { console.error('auth change handler', e) }
+    }, 0)
   })
   return () => data.subscription.unsubscribe()
 }
@@ -197,6 +205,10 @@ const airlineFromDb = (r) => ({ name: r.name, logoUrl: r.logo_url || '', code: r
 // heavier inventory/bookings payloads.
 export async function loadCore() {
   if (!hasSupabase) return null
+  // Never read (and hydrate from) an unauthenticated session — RLS would return
+  // empty and wipe the store. Skip until a session exists.
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return null
   try {
     const [pk, dep, air] = await Promise.all([
       supabase.from('packages').select('*'),
@@ -218,6 +230,9 @@ export async function loadCore() {
 
 export async function loadAll() {
   if (!hasSupabase) return null
+  // Guard: only load with a live session (see loadCore).
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return null
   try {
     const [pk, dep, gu, bk, inv, air, ven, tm] = await Promise.all([
       supabase.from('packages').select('*'),

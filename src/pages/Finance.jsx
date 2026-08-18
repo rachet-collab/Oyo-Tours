@@ -153,20 +153,20 @@ export default function Finance() {
       <TopBar
         title="Finance"
         subtitle="Approve the payments your sales team logs against package bookings."
+        tabs={(
+          <div className="flex flex-wrap items-center gap-2">
+            {FILTERS.map((f) => (
+              <button key={f} onClick={() => setFilter(f)}
+                className={cx('rounded-xl px-3.5 py-1.5 text-[13px] font-semibold transition-colors', filter === f ? 'bg-secondary text-secondary-foreground' : 'border bg-card text-muted-foreground hover:bg-muted')}>
+                {f}
+              </button>
+            ))}
+            <Button variant="outline" size="sm" icon="trend" className="ml-auto" onClick={() => navigate('/finance/analytics')}>Analytics</Button>
+          </div>
+        )}
       />
 
       <div className="grid gap-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
-        {/* Filter tabs + Analytics — sit below the page heading & subheading. */}
-        <div className="flex flex-wrap items-center gap-2">
-          {FILTERS.map((f) => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={cx('rounded-xl px-3.5 py-1.5 text-[13px] font-semibold transition-colors', filter === f ? 'bg-secondary text-secondary-foreground' : 'border bg-card text-muted-foreground hover:bg-muted')}>
-              {f}
-            </button>
-          ))}
-          <Button variant="outline" icon="trend" className="ml-auto" onClick={() => navigate('/finance/analytics')}>Analytics</Button>
-        </div>
-
         {/* Filter panel — search + logged-by */}
         <Card className="grid gap-3 p-4">
           <div className="flex flex-wrap items-center gap-2">

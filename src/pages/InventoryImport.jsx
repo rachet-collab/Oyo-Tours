@@ -139,7 +139,7 @@ function sheetToRows(input, kind) {
   return XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: '' })
 }
 
-export default function InventoryImport({ type = 'airline', open, onClose, asPage = false }) {
+export default function InventoryImport({ type = 'airline', open, onClose, asPage = false, onImport = null }) {
   const { inventoryView, packages, addInventory, updateInventory, vendors } = useApp()
   const [rows2d, setRows2d] = useState([])        // raw parsed rows
   const [fileName, setFileName] = useState('')
@@ -368,6 +368,28 @@ export default function InventoryImport({ type = 'airline', open, onClose, asPag
     const list = valid
     if (!list.length) return
     setDone(null)
+    // When used inside the package builder, hand the parsed flights back as
+    // staged departures (dates + round-trip legs + times + seats) instead of
+    // creating standalone inventory blocks.
+    if (type === 'airline' && onImport) {
+      const departures = list.map((r) => {
+        const rec = r.rec
+        const { from, to } = splitSector(rec.sector)
+        const airline = airlineFromFlightNo(rec.flightNo) || 'Airline'
+        const returnAirline = airlineFromFlightNo(rec.returnFlightNo) || airline
+        return {
+          date: rec.departureDate || '',
+          returnDate: rec.returnDate || rec.departureDate || '',
+          seatsTotal: String(Math.max(0, rec.totalSeats || 0) || ''),
+          outbound: { from: cityCode(from), to: cityCode(to), airline, flightNo: String(rec.flightNo || '').toUpperCase(), departTime: rec.departTime || '', arriveTime: rec.arriveTime || '' },
+          inbound: { from: cityCode(to), to: cityCode(from), airline: returnAirline, flightNo: String(rec.returnFlightNo || rec.flightNo || '').toUpperCase(), departTime: rec.returnDepartTime || '', arriveTime: rec.returnArriveTime || '' },
+        }
+      })
+      onImport(departures)
+      setDone({ imported: departures.length, skipped: parsed.length - list.length })
+      setRows2d([]); setText(''); setFileName('')
+      return
+    }
     // Hotels: collapse the rows into destination blocks first, then create those.
     const units = type === 'hotel' ? buildHotelBlocks(list) : list
     setProgress({ done: 0, total: units.length })
@@ -591,7 +613,7 @@ export default function InventoryImport({ type = 'airline', open, onClose, asPag
     <Modal
       open={open}
       onClose={close}
-      title={`Bulk upload ${type === 'hotel' ? 'hotel blocks' : 'airline inventory'}`}
+      title={`Bulk upload ${type === 'hotel' ? 'hotel blocks' : onImport ? 'flights' : 'airline inventory'}`}
       subtitle="Upload an Excel or CSV file — or paste rows. Every column the Add form captures is supported."
       width="max-w-4xl"
       footer={footer}

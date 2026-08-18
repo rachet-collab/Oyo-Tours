@@ -36,6 +36,8 @@ export default function Team() {
   const [pw, setPw] = useState('')
   const [pwSaving, setPwSaving] = useState(false)
   const [pwDone, setPwDone] = useState(false)
+  const [confirmDel, setConfirmDel] = useState(null) // user pending delete confirmation
+  const [delSaving, setDelSaving] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true); setErr('')
@@ -76,8 +78,11 @@ export default function Team() {
   }
 
   const removeUser = async (u) => {
+    setDelSaving(true)
     const res = await adminUsers({ action: 'delete_user', userId: u.id })
-    if (res?.error) { setErr(res.error.message); return }
+    setDelSaving(false)
+    if (res?.error) { setErr(res.error.message); setConfirmDel(null); return }
+    setConfirmDel(null)
     load()
   }
 
@@ -151,7 +156,7 @@ export default function Team() {
                           <div className="flex items-center justify-end gap-2">
                             <Button size="sm" variant="outline" icon="settings" onClick={() => { setErr(''); setPw(''); setPwDone(false); setPwUser(m) }}>Set password</Button>
                             {!isSelf && (
-                              <button onClick={() => removeUser(m)} aria-label="Remove user"
+                              <button onClick={() => { setErr(''); setConfirmDel(m) }} aria-label="Remove user"
                                 className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-status-urgent hover:bg-status-urgent-bg">
                                 <Icon name="x" size={13} />
                               </button>
@@ -220,6 +225,24 @@ export default function Team() {
           </Field>
           <p className="text-xs text-muted-foreground">The user can sign in with this immediately. They should change it after logging in.</p>
         </div>
+      </Modal>
+
+      {/* Delete-user confirmation */}
+      <Modal
+        open={!!confirmDel}
+        onClose={() => setConfirmDel(null)}
+        title="Remove this user?"
+        subtitle={confirmDel ? `${confirmDel.name || confirmDel.email} will lose access immediately.` : ''}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setConfirmDel(null)}>Cancel</Button>
+            <Button icon="x" disabled={delSaving} className="bg-status-urgent text-white hover:bg-status-urgent/90" onClick={() => removeUser(confirmDel)}>{delSaving ? 'Removing…' : 'Remove user'}</Button>
+          </>
+        }
+      >
+        <p className="text-sm text-muted-foreground">
+          This permanently deletes <span className="font-semibold text-foreground">{confirmDel?.name || confirmDel?.email}</span>{confirmDel?.email ? ` (${confirmDel.email})` : ''} and revokes their sign-in. This can't be undone. Their past bookings and logs are kept.
+        </p>
       </Modal>
     </>
   )

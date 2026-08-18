@@ -33,18 +33,18 @@ export default function TopBar({ title, subtitle, actions, crumbLabel, tabs }) {
     : trail.map((c, i) => (i === trail.length - 1 ? { ...c, to: null } : c))
 
   return (
-    <div className="border-b bg-background px-4 py-4 sm:px-6 lg:px-8">
+    <div className="border-b bg-background px-4 pb-0 pt-5 sm:px-6 lg:px-8">
       {/* Title + actions come first */}
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
           <h1 className="truncate text-xl font-bold leading-tight tracking-tight">{title}</h1>
-          {subtitle && <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>}
+          {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
         </div>
         {actions && <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">{actions}</div>}
       </div>
 
       {/* Breadcrumb flow — sits below the heading & subheading */}
-      <nav aria-label="Breadcrumb" className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+      <nav aria-label="Breadcrumb" className="mt-2.5 flex flex-wrap items-center gap-1.5 text-xs">
         {crumbs.map((c, i) => {
           const last = i === crumbs.length - 1
           return (
@@ -60,8 +60,12 @@ export default function TopBar({ title, subtitle, actions, crumbLabel, tabs }) {
         })}
       </nav>
 
-      {/* Optional tab / filter strip (e.g. Active/Inactive, All/Pending/Approved). */}
-      {tabs && <div className="mt-3">{tabs}</div>}
+      {/* Optional tab / filter strip (e.g. Active/Inactive, All/Pending/Approved).
+          Given generous top spacing so the header doesn't feel cramped; no bottom
+          padding on the container so the tab underline meets the divider. */}
+      {tabs
+        ? <div className="mt-5">{tabs}</div>
+        : <div className="pb-5" />}
     </div>
   )
 }

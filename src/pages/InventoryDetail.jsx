@@ -13,6 +13,14 @@ const cx = (...c) => c.filter(Boolean).join(' ')
 const cityCode = (s = '') => (String(s).match(/\(([A-Za-z]{3})\)/)?.[1] || String(s).replace(/[^A-Za-z]/g, '').slice(0, 3)).toUpperCase()
 const cityName = (s = '') => String(s).replace(/\s*\([A-Za-z]{3}\)\s*/, '').trim()
 
+// Hotel detail is split into two tabs (mirrors the booking-detail tabs):
+//   Inventory → rooms allocation + inventory by category
+//   Rooming   → hotel-per-traveller + rooming-list progress
+const HOTEL_TABS = [
+  { key: 'inventory', label: 'Inventory', icon: 'boxes' },
+  { key: 'rooming', label: 'Rooming', icon: 'building' },
+]
+
 function Bar({ pct, tone = 'bg-primary' }) {
   return (
     <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
@@ -49,6 +57,7 @@ export default function InventoryDetail() {
   const { inventoryById, packageById, releaseSeats, bookings, setBookingTravellers } = useApp()
   const inv = inventoryById(id)
   const [person, setPerson] = useState(null)
+  const [invTab, setInvTab] = useState('inventory') // hotels only: 'inventory' | 'rooming'
   // Release-inventory modal (quantity + optional note; the action is logged).
   const [relOpen, setRelOpen] = useState(false)
   const [relQty, setRelQty] = useState('')
@@ -358,10 +367,24 @@ export default function InventoryDetail() {
             </div>
           </Card>
 
+          {/* Hotel detail tabs — Inventory vs Rooming. Flights keep the single
+              continuous layout below (no tabs). */}
+          {isHotel && (
+            <div className="-mb-px flex flex-wrap items-center gap-1 overflow-x-auto border-b">
+              {HOTEL_TABS.map((t) => (
+                <button key={t.key} type="button" onClick={() => setInvTab(t.key)}
+                  className={cx('flex shrink-0 items-center gap-2 border-b-2 px-3.5 py-2.5 text-sm font-semibold transition-colors',
+                    invTab === t.key ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}>
+                  <Icon name={t.icon} size={16} /> {t.label}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Inventory by category — each category is its own room pool; a
               booking in one category draws down only that category. Under each
               category we list its cities, room split & hotel. */}
-          {isHotel && catLedger.length > 0 && (
+          {isHotel && invTab === 'inventory' && catLedger.length > 0 && (
             <Card className="p-5">
               <div className="mb-3 flex items-center justify-between">
                 <Eyebrow>Inventory by category</Eyebrow>
@@ -407,7 +430,7 @@ export default function InventoryDetail() {
           )}
 
           {/* Rooming — assign a hotel per city to each traveller + Excel export */}
-          {isHotel && blockCities(inv).length > 0 && (
+          {isHotel && invTab === 'rooming' && blockCities(inv).length > 0 && (
             <Card className="p-5">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
@@ -463,7 +486,8 @@ export default function InventoryDetail() {
             </Card>
           )}
 
-          {/* Allocation */}
+          {/* Rooms allocation — hotels show it on the Inventory tab; flights always. */}
+          {(!isHotel || invTab === 'inventory') && (
           <Card className="p-5">
             <div className="mb-3 flex items-center justify-between">
               <Eyebrow>{L.units} allocation</Eyebrow>
@@ -529,8 +553,10 @@ export default function InventoryDetail() {
               </div>
             )}
           </Card>
+          )}
 
-          {/* Naming progress + manifest — one block */}
+          {/* Naming / rooming-list progress + manifest. Hotels: Rooming tab; flights: always. */}
+          {(!isHotel || invTab === 'rooming') && (
           <Card className="p-5">
             <div className="mb-3 flex items-center justify-between">
               <Eyebrow>{L.naming} progress</Eyebrow>
@@ -573,20 +599,7 @@ export default function InventoryDetail() {
             )}
             {inv.namesPending > 12 && <p className="mt-2 text-xs text-muted-foreground">…and {inv.namesPending - 12} more pending.</p>}
           </Card>
-
-          {/* Deadlines */}
-          <Card className="p-5">
-            <Eyebrow className="mb-3">Operational deadlines</Eyebrow>
-            <div className="grid gap-2">
-              {[
-                { icon: 'users', label: L.namingDeadline, date: inv.namingDeadline, days: inv.namingDaysLeft },
-                { icon: 'seat', label: L.releaseDeadline, date: inv.releaseDeadline, days: inv.releaseDaysLeft },
-              ]
-                .slice()
-                .sort((a, b) => (a.days == null ? Infinity : a.days) - (b.days == null ? Infinity : b.days))
-                .map((d) => <DeadlineRow key={d.label} icon={d.icon} label={d.label} date={d.date} days={d.days} />)}
-            </div>
-          </Card>
+          )}
 
         </div>
 
@@ -611,6 +624,21 @@ export default function InventoryDetail() {
                     : navigate(`${L.route}/${inv.id}/edit`))}>
                   Edit
                 </Button>
+              </div>
+            </Card>
+
+            {/* Operational deadlines — kept in the sidebar so they stay visible
+                across both tabs (hotels) and alongside the block (flights). */}
+            <Card className="p-5">
+              <Eyebrow className="mb-3">Operational deadlines</Eyebrow>
+              <div className="grid gap-2">
+                {[
+                  { icon: 'users', label: L.namingDeadline, date: inv.namingDeadline, days: inv.namingDaysLeft },
+                  { icon: 'seat', label: L.releaseDeadline, date: inv.releaseDeadline, days: inv.releaseDaysLeft },
+                ]
+                  .slice()
+                  .sort((a, b) => (a.days == null ? Infinity : a.days) - (b.days == null ? Infinity : b.days))
+                  .map((d) => <DeadlineRow key={d.label} icon={d.icon} label={d.label} date={d.date} days={d.days} />)}
               </div>
             </Card>
 

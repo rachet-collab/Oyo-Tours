@@ -30,6 +30,25 @@ const invLabel = (i) => {
   return `${(i.type || 'airline') === 'hotel' ? 'HT' : 'FL'}-${num}`
 }
 
+// Days-left sub-label for a deadline: emphatic red when the date is close or
+// already past, muted otherwise. Returns null when there's no deadline set.
+const deadlineNote = (days) => {
+  if (days == null) return null
+  if (days < 0) return { text: 'Passed', urgent: true }
+  if (days === 0) return { text: 'Today', urgent: true }
+  return { text: `${days}d left`, urgent: days <= 3 }
+}
+
+function DeadlineCell({ date, days }) {
+  const n = deadlineNote(days)
+  return (
+    <td>
+      <p className="font-medium">{shortDate(date) || '—'}</p>
+      {n && <p className={cx('mt-0.5 text-xs font-semibold', n.urgent ? 'text-status-urgent' : 'text-muted-foreground')}>{n.text}</p>}
+    </td>
+  )
+}
+
 function Stat({ label, value, icon }) {
   return (
     <Card className="flex items-center gap-3 p-4">
@@ -214,7 +233,7 @@ export default function InventoryList({ type = 'airline' }) {
             <EmptyState icon="boxes" title="No inventory found" hint={isHotelView ? 'Hotel room blocks are created from packages — add hotels to a package and they’ll appear here.' : 'Flight blocks are created from packages — add flights to a package departure and they’ll appear here.'} />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1280px] text-sm">
+              <table className={cx('w-full text-sm', isHotelView ? 'min-w-[1160px]' : 'min-w-[1520px]')}>
                 <thead>
                   <tr className="border-b bg-muted/60 text-left text-[13px] font-semibold text-muted-foreground">
                     <th className="w-10 px-4 py-3">
@@ -224,8 +243,10 @@ export default function InventoryList({ type = 'airline' }) {
                     <th className="px-5 py-3">Inventory ID</th>
                     <th className="px-3 py-3">Package</th>
                     <th className="px-3 py-3">Route / stay</th>
-                    <th className="px-3 py-3">{isHotelView ? 'Check-in' : 'Departure date'}</th>
-                    <th className="px-3 py-3">{isHotelView ? 'Check-out' : 'Return date'}</th>
+                    {!isHotelView && <th className="px-3 py-3">Departure date</th>}
+                    {!isHotelView && <th className="px-3 py-3">Return date</th>}
+                    <th className="px-3 py-3">Release deadline</th>
+                    <th className="px-3 py-3">Naming deadline</th>
                     <th className="px-3 py-3">{unitLabel}</th>
                     <th className="px-3 py-3">Vendors</th>
                     <th className="px-5 py-3" aria-label="Actions" />
@@ -288,15 +309,20 @@ export default function InventoryList({ type = 'airline' }) {
                             </>
                           )}
                         </td>
-                        <td>
-                          <p className="font-medium">{shortDate(i.departureDate) || '—'}</p>
-                          {i.departTime ? <p className="text-xs text-muted-foreground">{timeLabel(i.departTime)}{i.arriveTime ? ` – ${timeLabel(i.arriveTime)}` : ''}</p> : null}
-                          {hot && <p className="mt-0.5 text-xs font-semibold text-status-urgent">Release in {Math.max(0, i.releaseDaysLeft)}d</p>}
-                        </td>
-                        <td>
-                          <p className="font-medium">{shortDate(i.returnDate) || '—'}</p>
-                          {i.returnDepartTime ? <p className="text-xs text-muted-foreground">{timeLabel(i.returnDepartTime)}{i.returnArriveTime ? ` – ${timeLabel(i.returnArriveTime)}` : ''}</p> : null}
-                        </td>
+                        {!isHotelView && (
+                          <td>
+                            <p className="font-medium">{shortDate(i.departureDate) || '—'}</p>
+                            {i.departTime ? <p className="text-xs text-muted-foreground">{timeLabel(i.departTime)}{i.arriveTime ? ` – ${timeLabel(i.arriveTime)}` : ''}</p> : null}
+                          </td>
+                        )}
+                        {!isHotelView && (
+                          <td>
+                            <p className="font-medium">{shortDate(i.returnDate) || '—'}</p>
+                            {i.returnDepartTime ? <p className="text-xs text-muted-foreground">{timeLabel(i.returnDepartTime)}{i.returnArriveTime ? ` – ${timeLabel(i.returnArriveTime)}` : ''}</p> : null}
+                          </td>
+                        )}
+                        <DeadlineCell date={i.releaseDeadline} days={i.releaseDaysLeft} />
+                        <DeadlineCell date={i.namingDeadline} days={i.namingDaysLeft} />
                         <td>
                           <SeatMeter available={i.available} total={i.totalSeats} />
                           <p className="mt-1.5 text-xs text-muted-foreground">{i.allocatedSeats} allocated</p>

@@ -22,15 +22,20 @@ import { BOOKING_STATUSES, STATUS_TONE, OCCUPANCY, CANCEL_TYPES } from '../store
 import { inr, shortDate, timeLabel, flightDuration } from '../lib/format.js'
 import { cancellationRules, applicableRule, refundFor } from '../lib/policy.js'
 import { blockCities, hotelOptionsForCity } from '../lib/rooming.js'
+import { downloadBookingVoucher } from '../lib/packageQuote.js'
 
 const cx = (...c) => c.filter(Boolean).join(' ')
 const COUNTRY_CODES = ['+91', '+1', '+44', '+971', '+65', '+66', '+62', '+94', '+977', '+60']
 const daysTo = (iso) => (iso ? Math.round((new Date(iso + 'T00:00:00') - new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00')) / 86400000) : null)
 
+// Rooms held: adults twin-share (2/room), singles take their own room.
+const roomsForBooking = (b) => Math.ceil((Number(b?.pax?.adult) || 0) / 2) + (Number(b?.pax?.single) || 0)
+
 // Left-panel tabs for the booking detail page.
 const BOOKING_TABS = [
   { key: 'overview', label: 'Overview', icon: 'wallet' },
   { key: 'flights', label: 'Flights', icon: 'booking' },
+  { key: 'hotels', label: 'Hotels', icon: 'building' },
   { key: 'travellers', label: 'Travellers', icon: 'userGroup' },
   { key: 'activity', label: 'Activity', icon: 'clock' },
 ]
@@ -133,9 +138,15 @@ export default function BookingDetail() {
         title={b.ref}
         crumbLabel={b.ref}
         subtitle={`${p?.destinationCity} · ${b.category}`}
-        actions={isAdmin && b.status !== 'Cancelled' ? (
-          <Button variant="outline" size="sm" icon="x" className="border-status-urgent/40 text-status-urgent hover:bg-status-urgent-bg" onClick={() => setCancelOpen(true)}>Cancel booking</Button>
-        ) : null}
+        actions={(
+          <>
+            {p && <Button variant="outline" size="sm" icon="boxes" onClick={() => navigate(`/packages/${p.id}`)}>View package</Button>}
+            <Button variant="outline" size="sm" icon="download" onClick={() => downloadBookingVoucher(b, { pkg: p, guest: g, departure: d, hotelBlock })}>Download</Button>
+            {isAdmin && b.status !== 'Cancelled' && (
+              <Button variant="outline" size="sm" icon="x" className="border-status-urgent/40 text-status-urgent hover:bg-status-urgent-bg" onClick={() => setCancelOpen(true)}>Cancel booking</Button>
+            )}
+          </>
+        )}
       />
 
       <div className="grid gap-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
@@ -180,12 +191,65 @@ export default function BookingDetail() {
           </Card>
         )}
 
-        {/* ---------- Travellers tab ---------- */}
-        {tab === 'travellers' && (
-        <div className="grid gap-5">
+        {/* ---------- Hotels tab ---------- */}
+        {tab === 'hotels' && (
+        <div className="grid gap-5 lg:grid-cols-3">
+          <div className="grid gap-5 lg:col-span-2">
+            {/* Hotel allocation from inventory rooming — or the package's offering
+                until anything is assigned. */}
+            <Card className="p-5">
+              <Eyebrow className="mb-3">Hotels</Eyebrow>
+              {(() => {
+                const cities = hotelBlock ? blockCities(hotelBlock) : []
+                const allocated = (b.travellerDetails || []).some((t) => t.hotelByCity && Object.values(t.hotelByCity).some(Boolean))
+                if (cities.length && allocated) {
+                  return (
+                    <div className="grid gap-3">
+                      {cities.map((city) => (
+                        <div key={city} className="rounded-xl border p-3.5">
+                          <p className="mb-2 flex items-center gap-2 text-sm font-bold"><Icon name="building" size={14} className="text-primary" />{city}</p>
+                          <div className="grid gap-1.5">
+                            {(b.travellerDetails || []).map((t, i) => {
+                              const nm = `${t.firstName || ''} ${t.lastName || ''}`.trim() || t.label || `Guest ${i + 1}`
+                              const hotel = t.hotelByCity?.[city] || ''
+                              return (
+                                <div key={i} className="flex items-center justify-between gap-3 text-sm">
+                                  <span className="text-muted-foreground">{nm}</span>
+                                  <span className={hotel ? 'font-medium' : 'text-muted-foreground'}>{hotel || 'Not allocated'}</span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                      <p className="text-xs text-muted-foreground">Allocation is managed from Inventory (rooming) and reflected here.</p>
+                    </div>
+                  )
+                }
+                const offer = (p?.hotels || []).find((h) => h.category === b.category)?.rows || []
+                if (offer.length) {
+                  return (
+                    <>
+                      <p className="mb-3 text-xs text-muted-foreground">Not allocated yet — this is what the package offers for <span className="font-semibold text-foreground">{b.category}</span>. Hotels are assigned from Inventory before travel.</p>
+                      <div className="grid gap-2">
+                        {offer.map((r, i) => (
+                          <div key={i} className="flex flex-col gap-1 rounded-xl border p-3 sm:flex-row sm:items-center sm:gap-3">
+                            <span className="flex shrink-0 items-center gap-2 sm:w-40"><Icon name="building" size={14} className="text-primary" /><span className="text-sm font-semibold">{r.city}</span></span>
+                            <span className="text-sm text-muted-foreground">{r.options}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )
+                }
+                return <p className="rounded-xl border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">No hotel details on this booking.</p>
+              })()}
+            </Card>
+          </div>
+          <div className="grid gap-5 lg:col-span-1">
           {/* Occupancy */}
           <Card className="p-5">
-            <Eyebrow className="mb-3">Occupancy · {b.seats} pax</Eyebrow>
+            <Eyebrow className="mb-3">Occupancy · {b.seats} pax · {roomsForBooking(b)} room{roomsForBooking(b) === 1 ? '' : 's'}</Eyebrow>
             <div className="grid gap-1.5">
               {OCCUPANCY.filter((o) => b.pax?.[o.key] > 0).map((o) => (
                 <div key={o.key} className="flex items-center justify-between text-sm">
@@ -222,7 +286,13 @@ export default function BookingDetail() {
               </div>
             )}
           </Card>
+          </div>
+        </div>
+        )}
 
+        {/* ---------- Travellers tab ---------- */}
+        {tab === 'travellers' && (
+        <div className="grid gap-5">
           {/* Travellers — names & details, editable before travel */}
           <Card className="p-5">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -268,24 +338,7 @@ export default function BookingDetail() {
                           {t.frequentFlyer && <Detail label="Frequent flyer" value={t.frequentFlyer} mono />}
                         </dl>
                       )}
-                      {/* Read-only: hotel allocation is managed from Inventory
-                          (rooming), not editable here. Bookings only display it. */}
-                      {hotelBlock && blockCities(hotelBlock).length > 0 && (
-                        <div className="mt-2.5 grid gap-2 border-t pt-2.5 sm:grid-cols-3">
-                          {blockCities(hotelBlock).map((city) => {
-                            const val = t.hotelByCity?.[city] || ''
-                            return (
-                              <div key={city}>
-                                <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">{city}</p>
-                                <div className="flex min-h-9 items-center gap-1.5 rounded-lg border bg-muted/30 px-2.5 py-1.5 text-xs">
-                                  <Icon name="building" size={13} className="shrink-0 text-primary" />
-                                  <span className={`truncate ${val ? 'font-medium' : 'text-muted-foreground'}`}>{val || 'Not allocated'}</span>
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
+                      {/* Hotel allocation now lives in the Hotels tab. */}
                       {t.docs?.length > 0 ? (
                         <div className="mt-2.5 flex flex-wrap gap-2">
                           {t.docs.map((doc, di) =>
@@ -328,8 +381,9 @@ export default function BookingDetail() {
           <div className="grid gap-5 lg:col-span-2">
           {/* Cancelled — shown to everyone with a reason & who initiated it */}
           {b.status === 'Cancelled' && (
-            <Card className="border-status-urgent/30 bg-status-urgent-bg/30 p-5">
-              <div className="flex items-start gap-3">
+            <Card className="overflow-hidden">
+              {/* Header strip */}
+              <div className="flex flex-wrap items-center gap-3 border-b bg-status-urgent-bg/30 px-5 py-4">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-status-urgent-bg text-status-urgent"><Icon name="x" size={18} /></span>
                 <div className="min-w-0">
                   <p className="text-sm font-bold">Booking cancelled</p>
@@ -338,102 +392,103 @@ export default function BookingDetail() {
                     {b.cancellation?.by ? ` · by ${b.cancellation.by}` : ''}
                     {b.cancellation?.at ? ` · ${shortDate(b.cancellation.at)}` : ''}
                   </p>
-                  {b.cancellation?.reason && <p className="mt-2 rounded-lg bg-card px-3 py-2 text-xs">{b.cancellation.reason}</p>}
-                  <p className="mt-2 text-xs text-muted-foreground">Held seats have been released back to inventory.</p>
-
-                  {/* Refund breakdown — the booking amount is always non-refundable */}
-                  {b.cancellation && (
-                    <div className="mt-3 grid gap-1.5 rounded-xl border bg-card p-3 text-sm">
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Collected</span>
-                        <span className="font-medium tabular-nums">{inr(b.cancellation.amountPaid || 0)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Booking amount <span className="text-[11px] font-semibold text-status-urgent">(non-refundable)</span></span>
-                        <span className="font-medium tabular-nums text-status-urgent">− {inr(b.cancellation.nonRefundable || 0)}</span>
-                      </div>
-                      {(b.cancellation.refundableBase || 0) > 0 && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground">Refundable (per policy{b.cancellation.appliedRule ? ` · ${b.cancellation.appliedRule}` : ''})</span>
-                          <span className="font-medium tabular-nums">{inr(b.cancellation.refundableBase || 0)}</span>
-                        </div>
-                      )}
-                      <div className="mt-0.5 flex items-center justify-between border-t pt-1.5">
-                        <span className="font-semibold">Refund due</span>
-                        <span className={cx('font-bold tabular-nums', (b.cancellation.refundAmount || 0) > 0 ? 'text-status-won' : 'text-muted-foreground')}>{inr(b.cancellation.refundAmount || 0)}</span>
-                      </div>
-                      {(b.cancellation.refundAmount || 0) === 0 && (
-                        <p className="text-[11px] text-muted-foreground">Only the booking amount was paid — the booking amount is non-refundable, so no refund is due.</p>
-                      )}
-                    </div>
-                  )}
-
-                  {b.cancellation?.refundStatus && b.cancellation.refundStatus !== 'none' && (
-                    <div className="mt-3 overflow-hidden rounded-xl border bg-card">
-                      {/* Refund summary row */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/30 px-4 py-3">
-                        <div>
-                          <p className="text-sm font-bold">Refund {inr(b.cancellation.refundAmount || 0)}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {b.cancellation.appliedRule ? `Per policy: ${b.cancellation.appliedRule}` : 'Per cancellation policy'}
-                            {b.cancellation.amountPaid != null ? ` · on ${inr(b.cancellation.amountPaid)} collected` : ''}
-                          </p>
-                        </div>
-                        {b.cancellation.refundStatus === 'refunded'
-                          ? <Pill tone="won" dot>Refunded</Pill>
-                          : <Pill tone="urgent" dot>Refund pending</Pill>}
-                      </div>
-
-                      {b.cancellation.refundStatus === 'refunded' ? (
-                        /* Settled — show who confirmed it + the proof */
-                        <div className="flex items-start gap-3 p-4">
-                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-status-won-bg text-status-won"><Icon name="check" size={18} /></span>
-                          <div className="min-w-0">
-                            <p className="text-sm font-bold">Refund settled</p>
-                            <p className="text-xs text-muted-foreground">
-                              Confirmed by {b.cancellation.refundedBy}{b.cancellation.refundedAt ? ` · ${shortDate(String(b.cancellation.refundedAt).slice(0, 10))}` : ''}
-                            </p>
-                            {b.cancellation.refundNote && <p className="mt-1 text-xs">Ref: <span className="font-medium">{b.cancellation.refundNote}</span></p>}
-                            {b.cancellation.refundProof?.url && (
-                              <a href={b.cancellation.refundProof.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-1.5 text-xs font-medium hover:bg-muted">
-                                <Icon name="paperclip" size={13} className="text-primary" /><span className="max-w-[180px] truncate">{b.cancellation.refundProof.name || 'Proof'}</span>
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      ) : (isAdmin || user?.role === 'operations') ? (
-                        /* Finance action — confirm the refund payout with a reference & proof */
-                        <div className="p-4">
-                          <div className="flex items-start gap-3">
-                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-status-urgent-bg text-status-urgent"><Icon name="wallet" size={18} /></span>
-                            <div>
-                              <p className="text-sm font-bold">Confirm refund payout</p>
-                              <p className="text-xs text-muted-foreground">Finance confirms the refund was paid to the guest. Add the reference and upload proof.</p>
-                            </div>
-                          </div>
-                          <Input value={refundNote} onChange={(e) => setRefundNote(e.target.value)} placeholder="Refund reference (UTR / mode)…" className="mt-3" />
-                          <div className="mt-2">
-                            <input ref={refundProofRef} type="file" accept="image/*,application/pdf" hidden onChange={onRefundProof} />
-                            {refundProof ? (
-                              <div className="flex items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2 text-xs">
-                                <span className="flex min-w-0 items-center gap-1.5"><Icon name="paperclip" size={13} className="text-primary" /><span className="truncate font-medium">{refundProof.name}</span></span>
-                                <button type="button" className="shrink-0 font-semibold text-muted-foreground hover:text-foreground" onClick={() => setRefundProof(null)}>Remove</button>
-                              </div>
-                            ) : (
-                              <Button type="button" size="sm" variant="outline" icon="plus" onClick={() => refundProofRef.current?.click()}>Upload proof (receipt / screenshot)</Button>
-                            )}
-                          </div>
-                          <div className="mt-3 flex items-center justify-between gap-2">
-                            <span className="text-[11px] text-muted-foreground">Reference &amp; proof are required.</span>
-                            <Button size="sm" icon="check" disabled={!refundNote.trim() || !refundProof} onClick={confirmRefund}>Confirm refund paid</Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="p-4 text-xs text-muted-foreground">Refund is pending finance confirmation.</p>
-                      )}
-                    </div>
-                  )}
                 </div>
+                <Pill tone="urgent" className="ml-auto">Cancelled</Pill>
+              </div>
+
+              <div className="grid gap-4 p-5">
+                {b.cancellation?.reason && <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm">{b.cancellation.reason}</div>}
+                <p className="text-xs text-muted-foreground">Held seats have been released back to inventory.</p>
+
+                {/* Refund breakdown — the booking amount is always non-refundable */}
+                {b.cancellation && (
+                  <div className="grid gap-2 rounded-xl border p-4 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Collected</span>
+                      <span className="font-medium tabular-nums">{inr(b.cancellation.amountPaid || 0)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Booking amount <span className="text-[11px] font-semibold text-status-urgent">(non-refundable)</span></span>
+                      <span className="font-medium tabular-nums text-status-urgent">− {inr(b.cancellation.nonRefundable || 0)}</span>
+                    </div>
+                    {(b.cancellation.refundableBase || 0) > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Refundable{b.cancellation.appliedRule ? ` · ${b.cancellation.appliedRule}` : ''}</span>
+                        <span className="font-medium tabular-nums">{inr(b.cancellation.refundableBase || 0)}</span>
+                      </div>
+                    )}
+                    <div className="mt-1 flex items-center justify-between border-t pt-2.5">
+                      <span className="font-semibold">Refund due</span>
+                      <span className={cx('text-base font-bold tabular-nums', (b.cancellation.refundAmount || 0) > 0 ? 'text-status-won' : 'text-muted-foreground')}>{inr(b.cancellation.refundAmount || 0)}</span>
+                    </div>
+                    {(b.cancellation.refundAmount || 0) === 0 && (
+                      <p className="text-[11px] text-muted-foreground">Only the booking amount was paid — it's non-refundable, so no refund is due.</p>
+                    )}
+                  </div>
+                )}
+
+                {b.cancellation?.refundStatus && b.cancellation.refundStatus !== 'none' && (
+                  <div className="overflow-hidden rounded-xl border">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/30 px-4 py-3">
+                      <div>
+                        <p className="text-sm font-bold">Refund {inr(b.cancellation.refundAmount || 0)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {b.cancellation.appliedRule ? `Per policy: ${b.cancellation.appliedRule}` : 'Per cancellation policy'}
+                          {b.cancellation.amountPaid != null ? ` · on ${inr(b.cancellation.amountPaid)} collected` : ''}
+                        </p>
+                      </div>
+                      {b.cancellation.refundStatus === 'refunded'
+                        ? <Pill tone="won" dot>Refunded</Pill>
+                        : <Pill tone="urgent" dot>Refund pending</Pill>}
+                    </div>
+
+                    {b.cancellation.refundStatus === 'refunded' ? (
+                      <div className="flex items-start gap-3 p-4">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-status-won-bg text-status-won"><Icon name="check" size={18} /></span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold">Refund settled</p>
+                          <p className="text-xs text-muted-foreground">
+                            Confirmed by {b.cancellation.refundedBy}{b.cancellation.refundedAt ? ` · ${shortDate(String(b.cancellation.refundedAt).slice(0, 10))}` : ''}
+                          </p>
+                          {b.cancellation.refundNote && <p className="mt-1 text-xs">Ref: <span className="font-medium">{b.cancellation.refundNote}</span></p>}
+                          {b.cancellation.refundProof?.url && (
+                            <a href={b.cancellation.refundProof.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-1.5 text-xs font-medium hover:bg-muted">
+                              <Icon name="paperclip" size={13} className="text-primary" /><span className="max-w-[180px] truncate">{b.cancellation.refundProof.name || 'Proof'}</span>
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    ) : (isAdmin || user?.role === 'operations') ? (
+                      <div className="p-4">
+                        <div className="flex items-start gap-3">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-status-urgent-bg text-status-urgent"><Icon name="wallet" size={18} /></span>
+                          <div>
+                            <p className="text-sm font-bold">Confirm refund payout</p>
+                            <p className="text-xs text-muted-foreground">Finance confirms the refund was paid to the guest. Add the reference and upload proof.</p>
+                          </div>
+                        </div>
+                        <Input value={refundNote} onChange={(e) => setRefundNote(e.target.value)} placeholder="Refund reference (UTR / mode)…" className="mt-3" />
+                        <div className="mt-2">
+                          <input ref={refundProofRef} type="file" accept="image/*,application/pdf" hidden onChange={onRefundProof} />
+                          {refundProof ? (
+                            <div className="flex items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2 text-xs">
+                              <span className="flex min-w-0 items-center gap-1.5"><Icon name="paperclip" size={13} className="text-primary" /><span className="truncate font-medium">{refundProof.name}</span></span>
+                              <button type="button" className="shrink-0 font-semibold text-muted-foreground hover:text-foreground" onClick={() => setRefundProof(null)}>Remove</button>
+                            </div>
+                          ) : (
+                            <Button type="button" size="sm" variant="outline" icon="plus" onClick={() => refundProofRef.current?.click()}>Upload proof (receipt / screenshot)</Button>
+                          )}
+                        </div>
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          <span className="text-[11px] text-muted-foreground">Reference &amp; proof are required.</span>
+                          <Button size="sm" icon="check" disabled={!refundNote.trim() || !refundProof} onClick={confirmRefund}>Confirm refund paid</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="p-4 text-xs text-muted-foreground">Refund is pending finance confirmation.</p>
+                    )}
+                  </div>
+                )}
               </div>
             </Card>
           )}
@@ -548,6 +603,7 @@ export default function BookingDetail() {
                 <SumRow label="Booked by" value={b.agent} />
                 <SumRow label="Travel date" value={d ? shortDate(d.date) : '—'} />
                 <SumRow label="Seats" value={`${b.seats} pax`} />
+                <SumRow label="Rooms" value={`${roomsForBooking(b)} room${roomsForBooking(b) === 1 ? '' : 's'}`} />
               </div>
               {b.paymentNote && (
                 <div className="mt-3 rounded-xl bg-muted/50 px-3 py-2 text-xs">

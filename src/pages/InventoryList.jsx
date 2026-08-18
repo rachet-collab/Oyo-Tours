@@ -67,7 +67,7 @@ function Stat({ label, value, icon }) {
 // Inventory overview; shows filters, stats and the block table for that type.
 export default function InventoryList({ type = 'airline' }) {
   const isHotelView = type === 'hotel'
-  const { inventoryView, deleteInventory, updateInventory, packageById } = useApp()
+  const { inventoryView, deleteInventory, updateInventory, packageById, bookings, cancelBooking } = useApp()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [life, setLife] = useState('active') // 'active' | 'inactive'
@@ -119,7 +119,29 @@ export default function InventoryList({ type = 'airline' }) {
   })
   const selectedRows = useMemo(() => rows.filter((i) => sel.has(i.id)), [rows, sel])
   const selInactive = selectedRows.filter((i) => i.status === 'Inactive')
-  const bulkDelink = () => { selectedRows.forEach((i) => { if (i.packageId) updateInventory(i.id, { packageId: '' }) }); setSel(new Set()) }
+
+  // Non-cancelled bookings that would be orphaned by delinking these blocks —
+  // a booking is tied to a block via its airline/hotel inventory id.
+  const bookingsForBlocks = (blocks) => {
+    const ids = new Set(blocks.map((b) => b.id))
+    return bookings.filter((b) => b.status !== 'Cancelled' &&
+      (ids.has(b.airlineInventoryId) || ids.has(b.hotelInventoryId)))
+  }
+  // Delinking clears a block's package link. If bookings are riding on it, those
+  // bookings can no longer be fulfilled, so we confirm + cancel them first.
+  const [delinkConfirm, setDelinkConfirm] = useState(null) // { blocks, affected }
+  const requestDelink = () => {
+    const linked = selectedRows.filter((i) => i.packageId)
+    if (!linked.length) { setSel(new Set()); return }
+    const affected = bookingsForBlocks(linked)
+    if (affected.length) { setDelinkConfirm({ blocks: linked, affected }); return }
+    performDelink(linked, [])
+  }
+  const performDelink = (blocks, affected) => {
+    affected.forEach((b) => cancelBooking(b.id, 'operator', 'Inventory delinked from package'))
+    blocks.forEach((i) => { if (i.packageId) updateInventory(i.id, { packageId: '' }) })
+    setSel(new Set()); setDelinkConfirm(null)
+  }
   const bulkDelete = () => { selInactive.forEach((i) => deleteInventory(i.id)); setSel(new Set()) }
 
   // Stats reflect the CURRENT filtered rows, not just the lifecycle tab.
@@ -219,7 +241,7 @@ export default function InventoryList({ type = 'airline' }) {
           <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-foreground px-4 py-2.5 text-background">
             <span className="text-sm font-semibold">{sel.size} selected</span>
             <div className="ml-auto flex items-center gap-2">
-              <Button size="sm" variant="outline" icon="unlink" className="!border-background/40 !bg-transparent !text-background hover:!bg-background/15" onClick={bulkDelink}>Delink</Button>
+              <Button size="sm" variant="outline" icon="unlink" className="!border-background/40 !bg-transparent !text-background hover:!bg-background/15" onClick={requestDelink}>Delink</Button>
               <Button size="sm" variant="outline" className="!border-status-urgent/60 !bg-transparent !text-status-urgent hover:!bg-status-urgent/15" disabled={selInactive.length === 0} onClick={bulkDelete}>
                 Delete{selInactive.length ? ` (${selInactive.length})` : ''}
               </Button>
@@ -360,6 +382,47 @@ export default function InventoryList({ type = 'airline' }) {
           )}
         </Card>
       </div>
+
+      {/* Delink + cancel-bookings confirmation */}
+      <Modal
+        open={!!delinkConfirm}
+        onClose={() => setDelinkConfirm(null)}
+        title="Delink and cancel bookings?"
+        subtitle={delinkConfirm ? `${delinkConfirm.affected.length} booking${delinkConfirm.affected.length === 1 ? '' : 's'} riding on ${delinkConfirm.blocks.length === 1 ? 'this block' : `${delinkConfirm.blocks.length} blocks`}` : ''}
+        width="max-w-lg"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDelinkConfirm(null)}>Keep linked</Button>
+            <Button variant="danger" icon="unlink" onClick={() => performDelink(delinkConfirm.blocks, delinkConfirm.affected)}>
+              Delink &amp; cancel {delinkConfirm?.affected.length} booking{delinkConfirm?.affected.length === 1 ? '' : 's'}
+            </Button>
+          </>
+        }
+      >
+        <div className="grid gap-3">
+          <div className="flex items-start gap-3 rounded-xl border border-status-urgent/30 bg-status-urgent-bg/40 p-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-status-urgent-bg text-status-urgent"><Icon name="info" size={18} /></span>
+            <p className="text-sm text-muted-foreground">
+              {delinkConfirm?.affected.length === 1 ? 'A booking is' : 'Bookings are'} still riding on {delinkConfirm?.blocks.length === 1 ? 'this block' : 'these blocks'}. Delinking removes the package link, so the {delinkConfirm?.affected.length === 1 ? 'booking' : 'bookings'} below will be <span className="font-semibold text-status-urgent">cancelled</span> — the standard cancellation refund rule is applied to each.
+            </p>
+          </div>
+          <div className="grid max-h-60 gap-1.5 overflow-y-auto">
+            {(delinkConfirm?.affected || []).map((b) => {
+              const p = b.packageId ? packageById(b.packageId) : null
+              return (
+                <div key={b.id} className="flex items-center gap-2.5 rounded-lg border px-3 py-2 text-sm">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-status-urgent-bg text-status-urgent"><Icon name="booking" size={13} /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="font-mono text-xs font-semibold">{b.ref}</span>
+                    <span className="ml-2 text-xs text-muted-foreground">{[p?.name, b.category].filter(Boolean).join(' · ')}</span>
+                  </span>
+                  <Pill tone={b.status === 'Confirmed' ? 'won' : 'proposal'}>{b.status}</Pill>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={!!toDelete}

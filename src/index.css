@@ -143,3 +143,18 @@ h4 {
 @media (prefers-reduced-motion: reduce) {
   .animate-card-in, .animate-icon-pop { animation: none; opacity: 1; }
 }
+
+/* ------------------------------------------------------------------ */
+/*  Skeleton shimmer — for loading placeholders while data hydrates    */
+/* ------------------------------------------------------------------ */
+@keyframes shimmer { 100% { transform: translateX(100%); } }
+.shimmer { position: relative; overflow: hidden; }
+.shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+  animation: shimmer 1.5s infinite;
+}
+@media (prefers-reduced-motion: reduce) { .shimmer::after { animation: none; } }

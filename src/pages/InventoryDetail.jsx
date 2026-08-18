@@ -340,8 +340,10 @@ export default function InventoryDetail() {
                     <div className="flex items-center gap-3">
                       {pkg.coverUrl ? (
                         <img src={pkg.coverUrl} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover" />
+                      ) : pkg.emoji ? (
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-secondary text-lg">{pkg.emoji}</span>
                       ) : (
-                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-secondary text-lg">{pkg.emoji || '🧳'}</span>
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-secondary to-muted text-primary"><Icon name="boxes" size={20} /></span>
                       )}
                       <div className="min-w-0">
                         <p className="truncate text-sm font-bold">{pkg.name}</p>

@@ -11,7 +11,7 @@ const cx = (...c) => c.filter(Boolean).join(' ')
 
 // One compact, uniform card. Flight/Hotel show stats + a slim utilisation meter
 // (allocated ÷ purchased); Vendors shows a single count.
-function StatCard({ icon, svg, title, stats, meter, cta, onClick, index = 0 }) {
+function StatCard({ icon, svg, title, stats, meter, cta, onClick, index = 0, loading = false }) {
   const tone = { bar: 'bg-success', text: 'text-success' }
   return (
     <Card
@@ -38,7 +38,9 @@ function StatCard({ icon, svg, title, stats, meter, cta, onClick, index = 0 }) {
         <div className="flex divide-x overflow-hidden rounded-xl border bg-muted/30">
           {stats.map((st) => (
             <div key={st.label} className="flex-1 px-3 py-2.5">
-              <p className={cx('text-xl font-bold leading-none tabular-nums', st.tone)}>{st.value}</p>
+              {loading
+                ? <span className="shimmer block h-[18px] w-9 rounded-md bg-muted" />
+                : <p className={cx('text-xl font-bold leading-none tabular-nums', st.tone)}>{st.value}</p>}
               <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">{st.label}</p>
             </div>
           ))}
@@ -49,10 +51,14 @@ function StatCard({ icon, svg, title, stats, meter, cta, onClick, index = 0 }) {
         <div className="grid gap-1.5">
           <div className="flex items-center justify-between text-[11px]">
             <span className="text-muted-foreground">{meter.label}</span>
-            <span className={cx('font-bold tabular-nums', tone.text)}>{meter.pct}%</span>
+            {loading
+              ? <span className="shimmer block h-3 w-7 rounded bg-muted" />
+              : <span className={cx('font-bold tabular-nums', tone.text)}>{meter.pct}%</span>}
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div className={cx('h-full rounded-full transition-[width] duration-500', tone.bar)} style={{ width: `${meter.pct}%` }} />
+            {loading
+              ? <div className="shimmer h-full w-full rounded-full bg-muted" />
+              : <div className={cx('h-full rounded-full transition-[width] duration-500', tone.bar)} style={{ width: `${meter.pct}%` }} />}
           </div>
         </div>
       )}
@@ -65,8 +71,9 @@ function StatCard({ icon, svg, title, stats, meter, cta, onClick, index = 0 }) {
 }
 
 export default function Inventory() {
-  const { inventoryView, vendors } = useApp()
+  const { inventoryView, vendors, hydrated } = useApp()
   const navigate = useNavigate()
+  const loading = !hydrated // data still loading in from the backend
 
   const stats = useMemo(() => {
     const flights = inventoryView.filter((i) => (i.type || 'airline') === 'airline')
@@ -99,6 +106,7 @@ export default function Inventory() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard
           index={0}
+            loading={loading}
             svg={icFlight}
             title="Flight Inventory"
             desc="Airline seat blocks — routes, dates, allocation & release deadlines."
@@ -113,6 +121,7 @@ export default function Inventory() {
           />
           <StatCard
           index={1}
+            loading={loading}
             svg={icHotel}
             title="Hotel Inventory"
             desc="Hotel room blocks — properties, stays, rooming & release."
@@ -127,6 +136,7 @@ export default function Inventory() {
           />
           <StatCard
           index={2}
+            loading={loading}
             icon="users"
             title="Vendors"
             desc="Suppliers & consolidators, and the blocks sourced from each."

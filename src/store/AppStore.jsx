@@ -506,6 +506,11 @@ export function AppProvider({ children }) {
         remarks: 'Auto-created from package hotels.',
       }
       if (existing) { updateInventory(existing.id, values); return }
+      // Never auto-create from a not-yet-hydrated state. If inventory hasn't
+      // finished loading (or a load failed), we can't see that a block already
+      // exists in the backend — adding one here spawns duplicate hotel blocks for
+      // the same package. Only create once the inventory set is actually loaded.
+      if (!state.hydrated) return
       const key = `hotel|pkg|${pkg.id}`
       if (autoInvKeys.has(key)) return
       autoInvKeys.add(key)
@@ -604,10 +609,15 @@ export function AppProvider({ children }) {
       dispatch({ type: 'UPDATE_DEPARTURE', id, patch })
       apiUpdateDeparture(id, patch)
     }
-    // Delink (remove) a departure from its package.
+    // Delink (remove) a departure from its package. Any flight block that was
+    // auto-created from this departure is unlinked too — its packageId is
+    // cleared so it stops showing as tied to the package in Flight Inventory.
     const deleteDeparture = (id) => {
       dispatch({ type: 'DELETE_DEPARTURE', id })
       apiDeleteDeparture(id)
+      state.inventory
+        .filter((i) => i.fromDepartureId === id && i.packageId)
+        .forEach((i) => updateInventory(i.id, { packageId: '' }))
     }
     const addBooking = async (booking) => {
       const seats = totalPax(booking.pax)

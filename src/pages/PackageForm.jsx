@@ -928,17 +928,32 @@ export default function PackageForm() {
 
 /* ------------------------------------------------- departures editor --- */
 function DeparturesEditor({ view = 'departures', cats, deps, setDeps, existingDepartures = [] }) {
-  const { inventoryView, updateDeparture, deleteDeparture, airlines } = useApp()
+  const { inventoryView, updateDeparture, deleteDeparture, airlines, bookings, cancelBooking } = useApp()
   // Bulk delink: pick multiple departures, then confirm to remove them all.
   const [delinkMode, setDelinkMode] = useState(false)
   const [delinkSel, setDelinkSel] = useState([]) // keys: existing id, or `s-<idx>`
+  const [delinkWarn, setDelinkWarn] = useState(null) // { existingIds, stagedIdx, affected }
   const toggleDelink = (key) => setDelinkSel((s) => (s.includes(key) ? s.filter((k) => k !== key) : [...s, key]))
   const exitDelink = () => { setDelinkMode(false); setDelinkSel([]) }
+  // Bookings still live on a departure — delinking it strands them, so they get
+  // cancelled. We surface exactly which ones before the user commits.
+  const affectedBookings = (existingIds) => {
+    const ids = new Set(existingIds)
+    return (bookings || []).filter((b) => b.status !== 'Cancelled' && ids.has(b.departureId))
+  }
+  const runDelink = (existingIds, stagedIdx, affected) => {
+    affected.forEach((b) => cancelBooking(b.id, 'operator', 'Departure delinked from package'))
+    existingIds.forEach((id) => deleteDeparture(id))
+    if (stagedIdx.length) setDeps((ds) => ds.filter((_, i) => !stagedIdx.includes(i)))
+    setDelinkWarn(null)
+    exitDelink()
+  }
   const confirmDelink = () => {
     const stagedIdx = delinkSel.filter((k) => String(k).startsWith('s-')).map((k) => Number(k.slice(2)))
-    delinkSel.filter((k) => !String(k).startsWith('s-')).forEach((id) => deleteDeparture(id))
-    if (stagedIdx.length) setDeps((ds) => ds.filter((_, i) => !stagedIdx.includes(i)))
-    exitDelink()
+    const existingIds = delinkSel.filter((k) => !String(k).startsWith('s-'))
+    const affected = affectedBookings(existingIds)
+    if (affected.length) { setDelinkWarn({ existingIds, stagedIdx, affected }); return }
+    runDelink(existingIds, stagedIdx, [])
   }
   const [draft, setDraft] = useState(() => blankDep(cats))
   const [editId, setEditId] = useState(null)
@@ -1330,6 +1345,42 @@ function DeparturesEditor({ view = 'departures', cats, deps, setDeps, existingDe
 
       {/* Bulk upload flights → staged as departures on this package (not standalone inventory). */}
       <InventoryImport type="airline" open={bulkOpen} onClose={() => setBulkOpen(false)} onImport={addImportedFlights} />
+
+      {/* Delinking a departure with live bookings cancels them — confirm first. */}
+      <Modal
+        open={!!delinkWarn}
+        onClose={() => setDelinkWarn(null)}
+        title="Delink and cancel bookings?"
+        subtitle={delinkWarn ? `${delinkWarn.affected.length} booking${delinkWarn.affected.length === 1 ? '' : 's'} on the selected departure${delinkWarn.existingIds.length === 1 ? '' : 's'}` : ''}
+        width="max-w-lg"
+        footer={<>
+          <Button variant="ghost" onClick={() => setDelinkWarn(null)}>Keep departures</Button>
+          <Button variant="danger" icon="unlink" onClick={() => runDelink(delinkWarn.existingIds, delinkWarn.stagedIdx, delinkWarn.affected)}>
+            Delink &amp; cancel {delinkWarn?.affected.length} booking{delinkWarn?.affected.length === 1 ? '' : 's'}
+          </Button>
+        </>}
+      >
+        <div className="grid gap-3">
+          <div className="flex items-start gap-3 rounded-xl border border-status-urgent/30 bg-status-urgent-bg/40 p-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-status-urgent-bg text-status-urgent"><Icon name="info" size={18} /></span>
+            <p className="text-sm text-muted-foreground">
+              {delinkWarn?.affected.length === 1 ? 'A booking has' : 'Bookings have'} already been made on {delinkWarn?.existingIds.length === 1 ? 'this departure' : 'these departures'}. Removing {delinkWarn?.existingIds.length === 1 ? 'it' : 'them'} will <span className="font-semibold text-status-urgent">cancel</span> the {delinkWarn?.affected.length === 1 ? 'booking' : 'bookings'} below — the standard cancellation refund rule is applied to each.
+            </p>
+          </div>
+          <div className="grid max-h-60 gap-1.5 overflow-y-auto">
+            {(delinkWarn?.affected || []).map((b) => (
+              <div key={b.id} className="flex items-center gap-2.5 rounded-lg border px-3 py-2 text-sm">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-status-urgent-bg text-status-urgent"><Icon name="booking" size={13} /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="font-mono text-xs font-semibold">{b.ref}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">{b.category}{b.seats ? ` · ${b.seats} pax` : ''}</span>
+                </span>
+                <Pill tone={b.status === 'Confirmed' ? 'won' : 'proposal'}>{b.status}</Pill>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Modal>
 
       {/* ---------------- Pricing configuration ---------------- */}
       {view === 'pricing' && (
